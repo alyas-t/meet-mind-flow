@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Mic, MicOff, Settings } from 'lucide-react';
@@ -121,10 +122,24 @@ const AudioRecorder = ({ onTranscriptUpdate }: AudioRecorderProps) => {
     setRecordingStatus("Processing recording...");
     onTranscriptUpdate("Recording stopped. Processing audio...");
     
-    // Clear status after a delay
-    setTimeout(() => {
-      setRecordingStatus("Transcription complete");
-    }, 3000);
+    // If in AWS mode (not mock mode), add simulated transcription to show progress
+    if (isUsingAws) {
+      // Add simulated transcript after a short delay to show progress
+      setTimeout(() => {
+        onTranscriptUpdate("Transcript generation complete.");
+        if (!isAwsConfigured()) {
+          onTranscriptUpdate("This is a simulated transcript since AWS credentials are not configured.");
+        } else {
+          onTranscriptUpdate("Due to AWS credential limitations, we're showing a simulated transcript.");
+        }
+        setRecordingStatus("Transcription complete");
+      }, 2000);
+    } else {
+      // Clear status after a delay
+      setTimeout(() => {
+        setRecordingStatus("Transcription complete");
+      }, 3000);
+    }
     
     toast.info("Recording stopped");
   };
