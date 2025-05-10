@@ -37,7 +37,7 @@ class SummaryService {
       } catch (error) {
         console.error("Error in Bedrock processing:", error);
         console.log("Falling back to mock implementation due to AWS credential issues");
-        return this.generateMockKeyPoints(transcript);
+        throw error; // Let the component handle fallback to mock
       }
     }
   }
@@ -121,7 +121,7 @@ Please return your response in this exact JSON format:
       if (error.name === 'UnrecognizedClientException' || 
           (error.message && error.message.includes('security token'))) {
         console.error("AWS authorization error - your credentials may be expired:", error.message);
-        throw new Error("AWS credentials expired or invalid");
+        throw new Error("AWS security token invalid or expired");
       } else {
         console.error("Error in Bedrock processing:", error);
         throw error;
@@ -129,7 +129,8 @@ Please return your response in this exact JSON format:
     }
   }
 
-  private generateMockKeyPoints(transcript: string[]): Promise<{ text: string, type: 'point' | 'action' }[]> {
+  // Make this method public so it can be used directly in case of errors
+  public generateMockKeyPoints(transcript: string[]): Promise<{ text: string, type: 'point' | 'action' }[]> {
     // This simulates what would come from AWS Bedrock's AI model
     return new Promise(resolve => {
       const keyPoints = [];
@@ -140,7 +141,7 @@ Please return your response in this exact JSON format:
         if (transcript.length > 2) {
           keyPoints.push({
             text: `Key insight: ${this.getRandomKeyPoint()}`,
-            type: 'point'
+            type: 'point' as 'point'
           });
         }
         
@@ -148,7 +149,7 @@ Please return your response in this exact JSON format:
         if (transcript.length > 5) {
           keyPoints.push({
             text: `Action item: ${this.getRandomActionItem()}`,
-            type: 'action'
+            type: 'action' as 'action'
           });
         }
       }
