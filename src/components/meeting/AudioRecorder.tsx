@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Mic, MicOff, Settings } from 'lucide-react';
@@ -156,11 +155,6 @@ const AudioRecorder = ({ onTranscriptUpdate }: AudioRecorderProps) => {
           <p>{awsError}</p>
         </div>
       )}
-      
-      <div className="bg-amber-100 text-amber-800 text-sm px-3 py-2 rounded mb-4 w-full">
-        <p className="font-medium">Important:</p>
-        <p>You need to set a valid S3 bucket name in your .env file via the VITE_S3_BUCKET_NAME variable.</p>
-      </div>
       
       {isUsingAws && <div className="bg-green-100 text-green-800 text-xs font-medium px-2.5 py-0.5 rounded mb-4">AWS Transcribe Enabled</div>}
       

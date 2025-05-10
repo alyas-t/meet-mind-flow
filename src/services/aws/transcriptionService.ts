@@ -19,12 +19,14 @@ class TranscriptionService {
   private pollingInterval: number | null = null;
   private onErrorCallback: ((error: string) => void) | null = null;
   
-  // Use environment variables for S3 bucket if available
-  private s3Bucket = import.meta.env.VITE_S3_BUCKET_NAME || 'mindscribe';
+  // Use the bucket name from config, 'mindscribe' is now a valid value
+  private s3Bucket: string;
   private s3KeyPrefix = 'meeting-recordings/';
 
   constructor() {
     const awsConfig = getAwsConfig();
+    this.s3Bucket = awsConfig.s3BucketName;
+    
     console.log("AWS Config on initialization:", {
       region: awsConfig.region,
       hasAccessKey: !!awsConfig.credentials.accessKeyId && awsConfig.credentials.accessKeyId !== "YOUR_ACCESS_KEY_ID",
@@ -45,9 +47,9 @@ class TranscriptionService {
       console.log("Starting transcription service");
       this.onErrorCallback = onError || null;
       
-      // Validate S3 bucket is configured
-      if (!this.s3Bucket || this.s3Bucket === 'mindscribe') {
-        const error = "S3 bucket not properly configured. Please set VITE_S3_BUCKET_NAME.";
+      // The bucket is now valid as long as it exists in AWS
+      if (!this.s3Bucket) {
+        const error = "S3 bucket not configured. Please set VITE_S3_BUCKET_NAME.";
         console.error(error);
         if (this.onErrorCallback) this.onErrorCallback(error);
         return;
