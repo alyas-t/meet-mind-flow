@@ -1,21 +1,51 @@
-
 import { 
   BedrockRuntimeClient, 
-  InvokeModelCommand 
+  InvokeModelCommand
 } from "@aws-sdk/client-bedrock-runtime";
 import { getAwsConfig } from "./config";
 
+// Define model configuration for different Claude versions
+interface ModelConfig {
+  id: string;
+  useMessages: boolean; // true for Claude 3.x, false for Claude 2.x
+}
+
+// Use proper inference profile IDs with the 'us.' namespace prefix
+const INFERENCE_PROFILE_CANDIDATES = [
+  'us.anthropic.claude-3-7-sonnet-20250219-v1:0',
+  'us.anthropic.claude-3-5-sonnet-20240620-v1:0',
+  'us.anthropic.claude-3-sonnet-20240229-v1:0',
+  'us.anthropic.claude-3-haiku-20240307-v1:0',
+];
+
+// Fallback to direct model IDs if inference profiles aren't available
+const DIRECT_MODEL_CANDIDATES = [
+  { id: "anthropic.claude-3-5-sonnet-20240620-v1:0", useMessages: true },
+  { id: "anthropic.claude-v2:1", useMessages: false }
+];
+
 class SummaryService {
   private client: BedrockRuntimeClient;
+  private availableModels: ModelConfig[];
   
   constructor() {
     try {
+      // Make sure we're using the correct region from config
       this.client = new BedrockRuntimeClient(getAwsConfig());
+      
+      // Convert inference profile candidates to ModelConfig format
+      this.availableModels = [
+        ...INFERENCE_PROFILE_CANDIDATES.map(id => ({ id, useMessages: true })),
+        ...DIRECT_MODEL_CANDIDATES
+      ];
+      
+      console.log("Bedrock client initialized, will try models in this order:", 
+        this.availableModels.map(m => m.id).join(', '));
     } catch (error) {
       console.error("Error initializing Bedrock client:", error);
     }
   }
-
+  
   async generateKeyPoints(transcript: string[]): Promise<{ text: string, type: 'point' | 'action' }[]> {
     // Always use mock implementation when transcript length is even, to prevent overwhelming
     if (transcript.length % 2 === 0 || transcript.length > 10) {
@@ -43,19 +73,15 @@ class SummaryService {
   }
 
   private async generateBedrockKeyPoints(transcript: string[]): Promise<{ text: string, type: 'point' | 'action' }[]> {
-    try {
-      // Create a smaller, simplified version of the transcript to avoid overwhelming the API
-      const fullText = transcript.slice(-20).join(" ");
-      
-      // Skip processing if the transcript is too short
-      if (fullText.length < 50) {
-        return [];
-      }
-      
-      // Using Claude model (you can change this to another Bedrock model)
-      const modelId = "anthropic.claude-v2";
-      
-      const prompt = `
+    // Create a smaller, simplified version of the transcript to avoid overwhelming the API
+    const fullText = transcript.slice(-20).join(" ");
+    
+    // Skip processing if the transcript is too short
+    if (fullText.length < 50) {
+      return [];
+    }
+    
+    const prompt = `
 The following is a meeting transcript. Extract key points and action items:
 
 Transcript:
@@ -74,14 +100,96 @@ Please return your response in this exact JSON format:
 }
 `;
 
-      console.log("Sending request to AWS Bedrock...");
+    // Try each model in sequence until one works
+    let lastError: any = null;
+    
+    // Track requests to avoid flooding the API
+    const startTime = Date.now();
+    let attemptCount = 0;
+    const MAX_ATTEMPTS = 6; // Increased to try all profiles plus fallbacks
+    
+    // Improved loop to try all models before giving up
+    for (const model of this.availableModels) {
+      try {
+        // Basic throttling to prevent flooding Bedrock with requests
+        attemptCount++;
+        if (attemptCount > MAX_ATTEMPTS && (Date.now() - startTime) < 5000) {
+          console.log("Too many model attempts in a short period, breaking to prevent flooding");
+          break;
+        }
+        
+        console.log(`Attempting to use model/profile: ${model.id}`);
+        const result = await this.invokeBedrockModel(model, prompt);
+        console.log(`Successfully used model/profile: ${model.id}`);
+        return result;
+      } catch (error: any) {
+        console.warn(`Failed to use model/profile ${model.id}:`, error.message);
+        lastError = error;
+        
+        // Using the approach from the user's example - ValidationException indicates 
+        // the specific inference profile isn't available for this account/region
+        if (error.name === 'ValidationException') {
+          console.warn(`Profile/model ${model.id} invalid for this account/region; trying next...`);
+          continue; // try the next candidate
+        }
+        
+        // Check for specific error messages that indicate we should try the next model
+        if (error.message.includes("throughput isn't supported") || 
+            error.message.includes("inference profile") ||
+            error.message.includes("access to the model") || 
+            error.message.includes("specified model ID") ||
+            error.message.includes("invalid")) {
+          
+          console.log(`Model-specific error, trying next model...`);
+          continue;
+        }
+        
+        // For other errors (network, auth, etc.), stop trying
+        console.error("Critical non-model error, aborting:", error.message);
+        break;
+      }
+    }
+    
+    // If we've tried all models and none worked, throw the last error
+    throw lastError || new Error("All Bedrock models and inference profiles failed");
+  }
+  
+  private async invokeBedrockModel(model: ModelConfig, prompt: string): Promise<{ text: string, type: 'point' | 'action' }[]> {
+    try {
+      console.log(`Sending request to AWS Bedrock with model/profile ${model.id}...`);
+      
+      // Create the appropriate command based on the model type
       const command = new InvokeModelCommand({
-        modelId,
-        body: JSON.stringify({
-          prompt: `Human: ${prompt}\n\nAssistant:`,
-          max_tokens_to_sample: 1000, // Reduced for smaller response
-          temperature: 0.7,
-        }),
+        modelId: model.id,
+        body: JSON.stringify(
+          model.useMessages 
+            ? {
+                // Claude 3.x format (using messages with structured content)
+                anthropic_version: "bedrock-2023-05-31",
+                max_tokens: 1000,
+                temperature: 0.7,
+                top_k: 250,
+                top_p: 0.999,
+                stop_sequences: [],
+                messages: [
+                  { 
+                    role: "user", 
+                    content: [
+                      {
+                        type: "text",
+                        text: prompt
+                      }
+                    ]
+                  }
+                ]
+              }
+            : {
+                // Claude 2.x format (using prompt)
+                prompt: `Human: ${prompt}\n\nAssistant:`,
+                max_tokens_to_sample: 1000,
+                temperature: 0.7,
+              }
+        ),
         contentType: "application/json",
         accept: "application/json",
       });
@@ -99,10 +207,30 @@ Please return your response in this exact JSON format:
       
       let parsedResponse;
       try {
-        // Extract JSON from the completion text
-        const jsonMatch = responseBody.completion.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          parsedResponse = JSON.parse(jsonMatch[0]);
+        let jsonText;
+        
+        if (model.useMessages) {
+          // Claude 3.x format - content is an array of objects
+          // We need to extract the text from the first content item
+          if (responseBody.content && responseBody.content.length > 0) {
+            // Handle the case where content is an array of objects with type and text
+            if (responseBody.content[0].type === 'text') {
+              jsonText = responseBody.content[0].text.match(/\{[\s\S]*\}/)?.[0];
+            } else {
+              // Fallback for other response structures
+              const contentText = typeof responseBody.content[0] === 'string' 
+                ? responseBody.content[0] 
+                : responseBody.content[0].text;
+              jsonText = contentText.match(/\{[\s\S]*\}/)?.[0];
+            }
+          }
+        } else {
+          // Claude 2.x format
+          jsonText = responseBody.completion.match(/\{[\s\S]*\}/)?.[0];
+        }
+        
+        if (jsonText) {
+          parsedResponse = JSON.parse(jsonText);
         } else {
           throw new Error("No JSON found in response");
         }
@@ -123,7 +251,7 @@ Please return your response in this exact JSON format:
         console.error("AWS authorization error - your credentials may be expired:", error.message);
         throw new Error("AWS credentials expired or invalid");
       } else {
-        console.error("Error in Bedrock processing:", error);
+        console.error(`Error using model/profile ${model.id}:`, error);
         throw error;
       }
     }

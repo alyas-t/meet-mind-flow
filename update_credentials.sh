@@ -1,3 +1,10 @@
+#!/bin/bash
+
+# Create backup of current .env file
+cp .env .env.backup
+
+# Update .env file with new credentials
+cat > .env << EOL
 # AWS Credentials
 VITE_AWS_ACCESS_KEY_ID='ASIA4MTWI6WQPNKYJOKK'
 VITE_AWS_SECRET_ACCESS_KEY='JaJV1cY4MCffzcAn2LMLzUYZfCK01XlAqfAn+Ojp'
@@ -10,3 +17,7 @@ VITE_AWS_SESSION_TOKEN='IQoJb3JpZ2luX2VjEAcaCXVzLWVhc3QtMSJHMEUCIDIgmOSWLegx9YYv
 
 # S3 Bucket Configuration
 VITE_S3_BUCKET_NAME='mindscribe'
+EOL
+
+echo "AWS credentials updated in .env file"
+echo "Original .env file backed up as .env.backup" 
