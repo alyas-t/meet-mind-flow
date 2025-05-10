@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.476.0",
+    "@aws-sdk/client-s3": "^3.806.0",
     "@aws-sdk/client-transcribe": "^3.476.0",
     "@hookform/resolvers": "^3.9.0",
     "@radix-ui/react-accordion": "^1.2.0",
