@@ -28,8 +28,14 @@ const TranscriptPanel: React.FC<TranscriptPanelProps> = ({ transcript, autoScrol
       <h3 className="text-xl font-medium mb-4 pb-2 border-b sticky top-0 bg-white">Transcript</h3>
       <div className="space-y-4">
         {transcript.map((text, index) => (
-          <div key={index} className="animate-fade-in">
-            <p className="text-gray-800">{text}</p>
+          <div key={index} className={`animate-fade-in ${text.startsWith("Error:") ? "text-red-500" : ""}`}>
+            {text.startsWith("Transcription status:") || text.startsWith("Uploading") || text.startsWith("Audio uploaded") ? (
+              <p className="text-blue-600 font-medium">{text}</p>
+            ) : text.startsWith("Starting") || text.includes("job started") ? (
+              <p className="text-green-600">{text}</p>
+            ) : (
+              <p className="text-gray-800">{text}</p>
+            )}
           </div>
         ))}
         <div ref={transcriptEndRef} />

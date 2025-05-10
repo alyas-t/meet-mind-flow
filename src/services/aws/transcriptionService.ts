@@ -1,3 +1,4 @@
+
 import { 
   TranscribeClient,
   StartTranscriptionJobCommand,
@@ -16,6 +17,7 @@ class TranscriptionService {
   private audioChunks: Blob[] = [];
   private jobName: string = '';
   private pollingInterval: number | null = null;
+  private onErrorCallback: ((error: string) => void) | null = null;
   
   // Use environment variables for S3 bucket if available
   private s3Bucket = import.meta.env.VITE_S3_BUCKET_NAME || 'mindscribe';
@@ -25,8 +27,8 @@ class TranscriptionService {
     const awsConfig = getAwsConfig();
     console.log("AWS Config on initialization:", {
       region: awsConfig.region,
-      hasAccessKey: !!awsConfig.credentials.accessKeyId,
-      hasSecretKey: !!awsConfig.credentials.secretAccessKey,
+      hasAccessKey: !!awsConfig.credentials.accessKeyId && awsConfig.credentials.accessKeyId !== "YOUR_ACCESS_KEY_ID",
+      hasSecretKey: !!awsConfig.credentials.secretAccessKey && awsConfig.credentials.secretAccessKey !== "YOUR_SECRET_ACCESS_KEY",
       hasSessionToken: !!awsConfig.credentials.sessionToken,
       s3Bucket: this.s3Bucket
     });
@@ -35,9 +37,21 @@ class TranscriptionService {
     this.s3Client = new S3Client(awsConfig);
   }
 
-  async startTranscription(onTranscriptUpdate: (text: string) => void): Promise<void> {
+  async startTranscription(
+    onTranscriptUpdate: (text: string) => void,
+    onError?: (error: string) => void
+  ): Promise<void> {
     try {
       console.log("Starting transcription service");
+      this.onErrorCallback = onError || null;
+      
+      // Validate S3 bucket is configured
+      if (!this.s3Bucket || this.s3Bucket === 'mindscribe') {
+        const error = "S3 bucket not properly configured. Please set VITE_S3_BUCKET_NAME.";
+        console.error(error);
+        if (this.onErrorCallback) this.onErrorCallback(error);
+        return;
+      }
       
       // Get audio stream from user's microphone
       this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -71,11 +85,17 @@ class TranscriptionService {
         // Add an immediate transcript update to verify the function is working
         onTranscriptUpdate("Starting transcription with AWS...");
       } else {
+        const error = "AWS credentials are not properly configured";
+        console.error(error);
+        if (this.onErrorCallback) this.onErrorCallback(error);
         console.log("Using mock transcription due to missing credentials");
         this.startMockTranscription(onTranscriptUpdate);
       }
     } catch (error) {
       console.error("Error starting transcription:", error);
+      if (this.onErrorCallback) {
+        this.onErrorCallback(error instanceof Error ? error.message : "Unknown error starting transcription");
+      }
       throw error;
     }
   }
@@ -129,26 +149,37 @@ class TranscriptionService {
             console.log("Uploading to S3 with key:", s3Key);
             
             try {
+              onTranscriptUpdate("Uploading audio to S3...");
               const s3Uri = await this.uploadToS3(audioBlob, s3Key);
               console.log("S3 upload successful, URI:", s3Uri);
+              onTranscriptUpdate(`Audio uploaded to S3: ${this.s3Bucket}`);
               
               // Start transcription job
               await this.startTranscriptionJob(s3Key, onTranscriptUpdate);
             } catch (s3Error) {
               console.error("S3 or transcription error:", s3Error);
+              const errorMessage = s3Error instanceof Error ? s3Error.message : "Error uploading to S3";
               onTranscriptUpdate("Error: Failed to process audio. Check console for details.");
+              if (this.onErrorCallback) this.onErrorCallback(errorMessage);
             }
           } else {
             console.error("No audio recorded (blob size is 0)");
             onTranscriptUpdate("Error: No audio recorded.");
+            if (this.onErrorCallback) this.onErrorCallback("No audio recorded (blob size is 0)");
           }
         } catch (error) {
           console.error("Error processing recording:", error);
           onTranscriptUpdate("Error: Failed to process recording.");
+          if (this.onErrorCallback) {
+            this.onErrorCallback(error instanceof Error ? error.message : "Unknown error processing recording");
+          }
         }
       });
     } catch (error) {
       console.error("Error in AWS transcription setup:", error);
+      if (this.onErrorCallback) {
+        this.onErrorCallback(error instanceof Error ? error.message : "Unknown error in transcription setup");
+      }
       throw error;
     }
   }
@@ -174,6 +205,9 @@ class TranscriptionService {
       return s3Uri;
     } catch (error) {
       console.error("Error uploading to S3:", error);
+      if (this.onErrorCallback) {
+        this.onErrorCallback(`S3 upload failed: ${error instanceof Error ? error.message : "Unknown S3 error"}`);
+      }
       throw error;
     }
   }
@@ -214,6 +248,9 @@ class TranscriptionService {
           }
         } catch (error) {
           console.error("Error checking transcription status:", error);
+          if (this.onErrorCallback) {
+            this.onErrorCallback(`Transcription status check failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+          }
           if (this.pollingInterval) {
             clearInterval(this.pollingInterval);
             this.pollingInterval = null;
@@ -223,6 +260,9 @@ class TranscriptionService {
     } catch (error) {
       console.error("Error starting transcription job:", error);
       onTranscriptUpdate("Error: Failed to start transcription job.");
+      if (this.onErrorCallback) {
+        this.onErrorCallback(`Failed to start transcription job: ${error instanceof Error ? error.message : "Unknown error"}`);
+      }
       throw error;
     }
   }
@@ -251,12 +291,20 @@ class TranscriptionService {
         //   onTranscriptUpdate(transcript);
         // }
       } else if (status === 'FAILED') {
-        console.error("Transcription job failed:", response.TranscriptionJob?.FailureReason);
+        const reason = response.TranscriptionJob?.FailureReason || "Unknown reason";
+        console.error("Transcription job failed:", reason);
+        onTranscriptUpdate(`Transcription failed: ${reason}`);
+        if (this.onErrorCallback) this.onErrorCallback(`Transcription job failed: ${reason}`);
+      } else if (status) {
+        onTranscriptUpdate(`Transcription status: ${status}`);
       }
       
       return status || 'UNKNOWN';
     } catch (error) {
       console.error("Error checking transcription status:", error);
+      if (this.onErrorCallback) {
+        this.onErrorCallback(`Error checking transcription status: ${error instanceof Error ? error.message : "Unknown error"}`);
+      }
       throw error;
     }
   }
@@ -290,6 +338,7 @@ class TranscriptionService {
     this.stream = null;
     this.socket = null;
     this.audioChunks = [];
+    this.onErrorCallback = null;
     console.log("Transcription service stopped");
   }
 }

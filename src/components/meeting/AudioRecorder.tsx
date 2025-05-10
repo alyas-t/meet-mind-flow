@@ -15,6 +15,7 @@ const AudioRecorder = ({ onTranscriptUpdate }: AudioRecorderProps) => {
   const [elapsedTime, setElapsedTime] = useState<number>(0);
   const [isUsingAws, setIsUsingAws] = useState<boolean>(false);
   const [recordingStatus, setRecordingStatus] = useState<string>("");
+  const [awsError, setAwsError] = useState<string | null>(null);
   const timerRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -31,6 +32,13 @@ const AudioRecorder = ({ onTranscriptUpdate }: AudioRecorderProps) => {
       hasSessionToken: !!config.credentials.sessionToken,
       bucket: import.meta.env.VITE_S3_BUCKET_NAME
     });
+
+    // Display S3 bucket info
+    if (import.meta.env.VITE_S3_BUCKET_NAME) {
+      setRecordingStatus(`Using S3 bucket: ${import.meta.env.VITE_S3_BUCKET_NAME}`);
+    } else {
+      setAwsError("S3 bucket name not configured. Please set VITE_S3_BUCKET_NAME.");
+    }
   }, []);
 
   // Set up timer to track recording duration
@@ -61,10 +69,15 @@ const AudioRecorder = ({ onTranscriptUpdate }: AudioRecorderProps) => {
 
   const startRecording = async () => {
     try {
+      setAwsError(null);
       setRecordingStatus("Initializing microphone...");
       await transcriptionService.startTranscription((text) => {
         onTranscriptUpdate(text);
         setRecordingStatus("Transcribing...");
+      }, (errorMessage) => {
+        setAwsError(errorMessage);
+        setRecordingStatus("Error detected. See below.");
+        toast.error(errorMessage);
       });
       setIsRecording(true);
       setRecordingStatus("Recording...");
@@ -72,6 +85,7 @@ const AudioRecorder = ({ onTranscriptUpdate }: AudioRecorderProps) => {
     } catch (error) {
       console.error("Error accessing microphone:", error);
       setRecordingStatus("");
+      setAwsError(error instanceof Error ? error.message : "Unknown microphone error");
       toast.error("Could not access microphone. Please check permissions.");
     }
   };
@@ -83,7 +97,7 @@ const AudioRecorder = ({ onTranscriptUpdate }: AudioRecorderProps) => {
     
     // Clear status after a delay
     setTimeout(() => {
-      setRecordingStatus("");
+      setRecordingStatus("Transcription complete");
     }, 3000);
     
     toast.info("Recording stopped");
@@ -115,6 +129,13 @@ const AudioRecorder = ({ onTranscriptUpdate }: AudioRecorderProps) => {
       
       {recordingStatus && (
         <div className="text-sm text-gray-600 mb-4">{recordingStatus}</div>
+      )}
+      
+      {awsError && (
+        <div className="bg-red-100 text-red-800 text-sm px-3 py-2 rounded mb-4 w-full">
+          <p className="font-medium">AWS Error:</p>
+          <p>{awsError}</p>
+        </div>
       )}
       
       {isUsingAws && <div className="bg-green-100 text-green-800 text-xs font-medium px-2.5 py-0.5 rounded mb-4">AWS Transcribe Enabled</div>}
