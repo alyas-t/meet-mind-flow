@@ -16,6 +16,7 @@ const AudioRecorder = ({ onTranscriptUpdate }: AudioRecorderProps) => {
   const [recordingStatus, setRecordingStatus] = useState<string>("");
   const [awsError, setAwsError] = useState<string | null>(null);
   const timerRef = useRef<number | null>(null);
+  const configSentRef = useRef<boolean>(false);
 
   useEffect(() => {
     // Check if AWS is properly configured
@@ -24,19 +25,22 @@ const AudioRecorder = ({ onTranscriptUpdate }: AudioRecorderProps) => {
     
     setIsUsingAws(awsConfigured);
     
-    // Display S3 bucket info
-    const s3BucketName = config.s3BucketName;
-    
-    if (awsConfigured) {
-      onTranscriptUpdate(`AWS Configuration: Using region ${config.region}`);
+    // Display S3 bucket info only once
+    if (!configSentRef.current) {
+      const s3BucketName = config.s3BucketName;
       
-      if (s3BucketName) {
-        onTranscriptUpdate(`S3 Bucket: ${s3BucketName}`);
-        setRecordingStatus(`Using S3 bucket: ${s3BucketName}`);
-      } else {
-        const error = "S3 bucket name not configured. Please set VITE_S3_BUCKET_NAME in your .env file.";
-        onTranscriptUpdate(`Error: ${error}`);
-        setAwsError(error);
+      if (awsConfigured) {
+        onTranscriptUpdate(`AWS Configuration: Using region ${config.region}`);
+        
+        if (s3BucketName) {
+          onTranscriptUpdate(`S3 Bucket: ${s3BucketName}`);
+          setRecordingStatus(`Using S3 bucket: ${s3BucketName}`);
+        } else {
+          const error = "S3 bucket name not configured. Please set VITE_S3_BUCKET_NAME in your .env file.";
+          onTranscriptUpdate(`Error: ${error}`);
+          setAwsError(error);
+        }
+        configSentRef.current = true;
       }
     }
   }, [onTranscriptUpdate]);
@@ -86,6 +90,10 @@ const AudioRecorder = ({ onTranscriptUpdate }: AudioRecorderProps) => {
       onTranscriptUpdate("Starting audio recording...");
       
       await transcriptionService.startTranscription((text) => {
+        // Prevent duplicate AWS Configuration messages from being added again
+        if (text.startsWith("AWS Configuration:") || text.startsWith("S3 Bucket:")) {
+          return;
+        }
         onTranscriptUpdate(text);
         setRecordingStatus("Transcribing...");
       }, (errorMessage) => {
