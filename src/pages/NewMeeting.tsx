@@ -7,13 +7,35 @@ import PageLayout from '@/components/layout/PageLayout';
 import AudioRecorder from '@/components/meeting/AudioRecorder';
 import TranscriptPanel from '@/components/meeting/TranscriptPanel';
 import KeyPointsPanel from '@/components/meeting/KeyPointsPanel';
+import { toast } from 'sonner';
+import { useNavigate } from 'react-router-dom';
 
 const NewMeeting = () => {
   const [meetingTitle, setMeetingTitle] = useState<string>('Untitled Meeting');
   const [transcript, setTranscript] = useState<string[]>([]);
+  const [isSaving, setIsSaving] = useState<boolean>(false);
+  const navigate = useNavigate();
   
   const handleTranscriptUpdate = (text: string) => {
     setTranscript(prev => [...prev, text]);
+  };
+  
+  const handleSaveMeeting = async () => {
+    setIsSaving(true);
+    
+    try {
+      // In a real implementation, this would save to AWS S3 and DynamoDB
+      // For now, we'll simulate the saving process
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      toast.success("Meeting saved successfully");
+      navigate("/dashboard");
+    } catch (error) {
+      console.error("Error saving meeting:", error);
+      toast.error("Failed to save meeting. Please try again.");
+    } finally {
+      setIsSaving(false);
+    }
   };
   
   return (
@@ -40,11 +62,12 @@ const NewMeeting = () => {
 
       <div className="mt-6 flex justify-end">
         <Button 
-          disabled={transcript.length === 0}
+          disabled={transcript.length === 0 || isSaving}
           variant="outline"
           className="mr-4"
+          onClick={handleSaveMeeting}
         >
-          Save & Exit
+          {isSaving ? "Saving..." : "Save & Exit"}
         </Button>
       </div>
     </PageLayout>

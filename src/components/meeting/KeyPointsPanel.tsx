@@ -1,5 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
+import summaryService from '@/services/aws/summaryService';
 
 interface KeyPointsPanelProps {
   transcript: string[];
@@ -14,32 +15,28 @@ interface KeyPoint {
 const KeyPointsPanel: React.FC<KeyPointsPanelProps> = ({ transcript }) => {
   const [keyPoints, setKeyPoints] = useState<KeyPoint[]>([]);
   
-  // In a real implementation, this would be an API call to a summarization service
   useEffect(() => {
+    // Only generate key points if there's a substantial amount of transcript
     if (transcript.length > 0 && transcript.length % 2 === 0) {
-      // Generate a simulated key point every few transcript entries
-      const mockKeyPoint: KeyPoint = {
-        id: Date.now().toString(),
-        text: `Key insight from discussion point ${transcript.length / 2}`,
-        type: 'point'
+      const generateKeyPoints = async () => {
+        try {
+          // Get key points from our AWS Bedrock summary service
+          const newPoints = await summaryService.generateKeyPoints(transcript);
+          
+          // Add the key points with unique IDs
+          const formattedPoints = newPoints.map(point => ({
+            id: Date.now() + Math.random().toString(36).substring(2, 9),
+            text: point.text,
+            type: point.type
+          }));
+          
+          setKeyPoints(prev => [...prev, ...formattedPoints]);
+        } catch (error) {
+          console.error("Error generating key points:", error);
+        }
       };
       
-      setTimeout(() => {
-        setKeyPoints(prev => [...prev, mockKeyPoint]);
-      }, 1500);
-      
-      // Sometimes generate an action item
-      if (transcript.length % 4 === 0) {
-        const mockActionItem: KeyPoint = {
-          id: (Date.now() + 1).toString(),
-          text: `Action required: Follow up on item ${transcript.length / 4}`,
-          type: 'action'
-        };
-        
-        setTimeout(() => {
-          setKeyPoints(prev => [...prev, mockActionItem]);
-        }, 2500);
-      }
+      generateKeyPoints();
     }
   }, [transcript]);
 

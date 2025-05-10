@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Mic, MicOff, Settings } from 'lucide-react';
 import { toast } from 'sonner';
+import transcriptionService from '@/services/aws/transcriptionService';
 
 interface AudioRecorderProps {
   onTranscriptUpdate: (text: string) => void;
@@ -11,37 +12,7 @@ interface AudioRecorderProps {
 const AudioRecorder = ({ onTranscriptUpdate }: AudioRecorderProps) => {
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [elapsedTime, setElapsedTime] = useState<number>(0);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<number | null>(null);
-
-  // For now, we'll simulate transcription with mock data
-  const mockTranscriptionText = [
-    "Hello everyone, thank you for joining today's meeting.",
-    "Let's start by discussing the current project status.",
-    "We've made good progress on the first milestone.",
-    "I think we should prioritize the user interface improvements.",
-    "Does anyone have questions about the timeline?",
-    "We should allocate more resources to testing before the next release.",
-    "Let's make sure we address all the feedback from the last user testing session.",
-  ];
-
-  useEffect(() => {
-    if (isRecording) {
-      let count = 0;
-      // Simple simulation - add a new line to the transcript every few seconds
-      const transcriptionInterval = setInterval(() => {
-        if (count < mockTranscriptionText.length) {
-          onTranscriptUpdate(mockTranscriptionText[count]);
-          count++;
-        } else {
-          clearInterval(transcriptionInterval);
-        }
-      }, 3000);
-
-      return () => clearInterval(transcriptionInterval);
-    }
-  }, [isRecording, onTranscriptUpdate]);
 
   // Set up timer to track recording duration
   useEffect(() => {
@@ -71,23 +42,9 @@ const AudioRecorder = ({ onTranscriptUpdate }: AudioRecorderProps) => {
 
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
-      
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
-      
-      mediaRecorder.start();
+      await transcriptionService.startTranscription(onTranscriptUpdate);
       setIsRecording(true);
-      
       toast.success("Recording started");
-      
-      // In a real implementation, we would send audio chunks to a transcription service
-      mediaRecorder.ondataavailable = (e) => {
-        console.log("Audio data available", e.data);
-        // Here we would send this data to a transcription service
-      };
-      
     } catch (error) {
       console.error("Error accessing microphone:", error);
       toast.error("Could not access microphone. Please check permissions.");
@@ -95,14 +52,9 @@ const AudioRecorder = ({ onTranscriptUpdate }: AudioRecorderProps) => {
   };
 
   const stopRecording = () => {
-    if (mediaRecorderRef.current && streamRef.current) {
-      mediaRecorderRef.current.stop();
-      
-      streamRef.current.getTracks().forEach(track => track.stop());
-      
-      setIsRecording(false);
-      toast.info("Recording stopped");
-    }
+    transcriptionService.stopTranscription();
+    setIsRecording(false);
+    toast.info("Recording stopped");
   };
 
   return (
