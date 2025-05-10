@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import summaryService from '@/services/aws/summaryService';
 import { AlertCircle } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 interface KeyPointsPanelProps {
   transcript: string[];
@@ -41,11 +42,26 @@ const KeyPointsPanel: React.FC<KeyPointsPanelProps> = ({ transcript }) => {
         } catch (error) {
           console.error("Error generating key points:", error);
           if (error instanceof Error) {
-            if (error.message.includes("AWS credentials expired")) {
+            if (error.message.includes("security token") || error.message.includes("invalid")) {
+              setError("AWS security token is invalid. Using simulated key points.");
+            } else if (error.message.includes("AWS credentials expired")) {
               setError("AWS credentials have expired. Using simulated key points.");
             } else {
               setError("Could not connect to AI services. Using simulated key points.");
             }
+          }
+          
+          // Generate mock key points regardless of error
+          try {
+            const mockPoints = await summaryService.generateMockKeyPoints(transcript);
+            const formattedMockPoints = mockPoints.map(point => ({
+              id: Date.now() + Math.random().toString(36).substring(2, 9),
+              text: point.text,
+              type: point.type
+            }));
+            setKeyPoints(prev => [...prev, ...formattedMockPoints]);
+          } catch (mockError) {
+            console.error("Failed to generate even mock key points:", mockError);
           }
         } finally {
           setIsGenerating(false);
@@ -77,9 +93,11 @@ const KeyPointsPanel: React.FC<KeyPointsPanelProps> = ({ transcript }) => {
       <h3 className="text-xl font-medium mb-4 pb-2 border-b sticky top-0 bg-white">Key Points & Actions</h3>
       
       {error && (
-        <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded text-amber-800 text-sm">
-          <p className="font-medium">Note: {error}</p>
-        </div>
+        <Alert variant="destructive" className="mb-4 bg-amber-50 border-amber-200 text-amber-800">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Important</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
       
       <div className="space-y-4">
