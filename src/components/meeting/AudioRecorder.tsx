@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Mic, MicOff, Settings } from 'lucide-react';
 import { toast } from 'sonner';
 import transcriptionService from '@/services/aws/transcriptionService';
+import { getAwsConfig } from '@/services/aws/config';
 
 interface AudioRecorderProps {
   onTranscriptUpdate: (text: string) => void;
@@ -12,7 +13,18 @@ interface AudioRecorderProps {
 const AudioRecorder = ({ onTranscriptUpdate }: AudioRecorderProps) => {
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [elapsedTime, setElapsedTime] = useState<number>(0);
+  const [isUsingAws, setIsUsingAws] = useState<boolean>(false);
   const timerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    // Check if AWS is properly configured
+    const config = getAwsConfig();
+    const awsConfigured = 
+      config.credentials.accessKeyId !== "YOUR_ACCESS_KEY_ID" && 
+      config.credentials.secretAccessKey !== "YOUR_SECRET_ACCESS_KEY";
+    
+    setIsUsingAws(awsConfigured);
+  }, []);
 
   // Set up timer to track recording duration
   useEffect(() => {
@@ -44,7 +56,7 @@ const AudioRecorder = ({ onTranscriptUpdate }: AudioRecorderProps) => {
     try {
       await transcriptionService.startTranscription(onTranscriptUpdate);
       setIsRecording(true);
-      toast.success("Recording started");
+      toast.success(`Recording started${isUsingAws ? ' with AWS Transcribe' : ' (mock mode)'}`);
     } catch (error) {
       console.error("Error accessing microphone:", error);
       toast.error("Could not access microphone. Please check permissions.");
@@ -80,6 +92,8 @@ const AudioRecorder = ({ onTranscriptUpdate }: AudioRecorderProps) => {
       <div className="text-xl font-mono mb-4">
         {formatTime(elapsedTime)}
       </div>
+      
+      {isUsingAws && <div className="bg-green-100 text-green-800 text-xs font-medium px-2.5 py-0.5 rounded mb-4">AWS Transcribe Enabled</div>}
       
       <Button 
         className={`w-full ${isRecording ? 'bg-red-500 hover:bg-red-600' : ''}`}

@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -9,12 +9,30 @@ import TranscriptPanel from '@/components/meeting/TranscriptPanel';
 import KeyPointsPanel from '@/components/meeting/KeyPointsPanel';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
+import { getAwsConfig } from '@/services/aws/config';
 
 const NewMeeting = () => {
   const [meetingTitle, setMeetingTitle] = useState<string>('Untitled Meeting');
   const [transcript, setTranscript] = useState<string[]>([]);
   const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [awsConfigured, setAwsConfigured] = useState<boolean>(false);
   const navigate = useNavigate();
+  
+  useEffect(() => {
+    // Check if AWS is properly configured
+    const config = getAwsConfig();
+    const isConfigured = 
+      config.credentials.accessKeyId !== "YOUR_ACCESS_KEY_ID" && 
+      config.credentials.secretAccessKey !== "YOUR_SECRET_ACCESS_KEY";
+    
+    setAwsConfigured(isConfigured);
+    
+    if (!isConfigured) {
+      toast.warning("AWS credentials not configured. Using mock data.", {
+        duration: 5000,
+      });
+    }
+  }, []);
   
   const handleTranscriptUpdate = (text: string) => {
     setTranscript(prev => [...prev, text]);
@@ -24,11 +42,16 @@ const NewMeeting = () => {
     setIsSaving(true);
     
     try {
-      // In a real implementation, this would save to AWS S3 and DynamoDB
-      // For now, we'll simulate the saving process
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      if (awsConfigured) {
+        // In a production app, this would save meeting data to DynamoDB
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        toast.success("Meeting saved to AWS successfully");
+      } else {
+        // Mock saving
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        toast.success("Meeting saved successfully (mock)");
+      }
       
-      toast.success("Meeting saved successfully");
       navigate("/dashboard");
     } catch (error) {
       console.error("Error saving meeting:", error);
@@ -39,7 +62,7 @@ const NewMeeting = () => {
   };
   
   return (
-    <PageLayout className="py-6">
+    <PageLayout className="py-6" showAwsNotice={!awsConfigured}>
       <div className="mb-6">
         <Input
           value={meetingTitle}

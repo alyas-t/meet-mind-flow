@@ -1,8 +1,18 @@
 
 import React from 'react';
 import { AlertTriangle } from 'lucide-react';
+import { getAwsConfig } from '@/services/aws/config';
 
 const AwsCredentialNotice = () => {
+  const config = getAwsConfig();
+  const needsCredentials = 
+    config.credentials.accessKeyId === "YOUR_ACCESS_KEY_ID" || 
+    config.credentials.secretAccessKey === "YOUR_SECRET_ACCESS_KEY";
+  
+  if (!needsCredentials) {
+    return null;
+  }
+  
   return (
     <div className="p-4 bg-amber-50 border border-amber-200 rounded-md my-4">
       <div className="flex items-start">
@@ -10,9 +20,13 @@ const AwsCredentialNotice = () => {
         <div>
           <h4 className="font-medium text-amber-800">AWS Credentials Required</h4>
           <p className="text-sm text-amber-700 mt-1">
-            This application is currently using mock data. To enable full functionality with AWS services, 
-            please provide valid AWS credentials in the configuration file.
+            This application is currently using mock data. To enable full AWS functionality:
           </p>
+          <ol className="text-sm text-amber-700 mt-2 list-decimal list-inside space-y-1 ml-2">
+            <li>Update the AWS credentials in <code className="bg-amber-100 px-1 rounded">src/services/aws/config.ts</code></li>
+            <li>Make sure your AWS account has the necessary permissions for Transcribe and Bedrock</li>
+            <li>Create an S3 bucket for storing meeting recordings and transcripts</li>
+          </ol>
         </div>
       </div>
     </div>

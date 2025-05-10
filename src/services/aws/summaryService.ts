@@ -1,5 +1,7 @@
-
-import { BedrockRuntimeClient } from "@aws-sdk/client-bedrock-runtime";
+import { 
+  BedrockRuntimeClient, 
+  InvokeModelCommand 
+} from "@aws-sdk/client-bedrock-runtime";
 import { getAwsConfig } from "./config";
 
 class SummaryService {
@@ -10,10 +12,85 @@ class SummaryService {
   }
 
   async generateKeyPoints(transcript: string[]): Promise<{ text: string, type: 'point' | 'action' }[]> {
-    // In a real implementation, we would call AWS Bedrock here
-    // For now, we'll use a mock implementation
+    const hasValidCredentials = 
+      getAwsConfig().credentials.accessKeyId !== "YOUR_ACCESS_KEY_ID" && 
+      getAwsConfig().credentials.secretAccessKey !== "YOUR_SECRET_ACCESS_KEY";
     
-    return this.generateMockKeyPoints(transcript);
+    if (hasValidCredentials) {
+      return this.generateBedrockKeyPoints(transcript);
+    } else {
+      return this.generateMockKeyPoints(transcript);
+    }
+  }
+
+  private async generateBedrockKeyPoints(transcript: string[]): Promise<{ text: string, type: 'point' | 'action' }[]> {
+    try {
+      const fullText = transcript.join(" ");
+      
+      // Skip processing if the transcript is too short
+      if (fullText.length < 50) {
+        return [];
+      }
+      
+      // Using Claude model (you can change this to another Bedrock model)
+      const modelId = "anthropic.claude-v2";
+      
+      const prompt = `
+The following is a meeting transcript. Extract key points and action items:
+
+Transcript:
+${fullText}
+
+Please return your response in this exact JSON format:
+{
+  "keyPoints": [
+    {"text": "First key point", "type": "point"},
+    {"text": "Second key point", "type": "point"}
+  ],
+  "actionItems": [
+    {"text": "First action item", "type": "action"},
+    {"text": "Second action item", "type": "action"}
+  ]
+}
+`;
+
+      const command = new InvokeModelCommand({
+        modelId,
+        body: JSON.stringify({
+          prompt: `Human: ${prompt}\n\nAssistant:`,
+          max_tokens_to_sample: 4000,
+          temperature: 0.7,
+        }),
+        contentType: "application/json",
+        accept: "application/json",
+      });
+
+      const response = await this.client.send(command);
+      const responseBody = JSON.parse(new TextDecoder().decode(response.body));
+      
+      let parsedResponse;
+      try {
+        // Extract JSON from the completion text
+        const jsonMatch = responseBody.completion.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          parsedResponse = JSON.parse(jsonMatch[0]);
+        } else {
+          throw new Error("No JSON found in response");
+        }
+      } catch (error) {
+        console.error("Error parsing Bedrock response:", error);
+        return [];
+      }
+      
+      // Combine key points and action items into one array
+      const keyPoints = parsedResponse.keyPoints || [];
+      const actionItems = parsedResponse.actionItems || [];
+      
+      return [...keyPoints, ...actionItems];
+    } catch (error) {
+      console.error("Error in Bedrock processing:", error);
+      return this.generateMockKeyPoints(transcript);
+    }
   }
 
   private async generateMockKeyPoints(transcript: string[]): Promise<{ text: string, type: 'point' | 'action' }[]> {
