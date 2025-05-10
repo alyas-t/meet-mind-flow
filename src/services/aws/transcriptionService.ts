@@ -1,19 +1,19 @@
 
 import { 
-  TranscribeStreamingClient,
-  StartStreamTranscriptionCommand,
-} from "@aws-sdk/client-transcribe-streaming";
+  TranscribeClient,
+  StartTranscriptionJobCommand
+} from "@aws-sdk/client-transcribe";
 import { getAwsConfig } from "./config";
 
 class TranscriptionService {
-  private client: TranscribeStreamingClient;
+  private client: TranscribeClient;
   private mediaRecorder: MediaRecorder | null = null;
   private stream: MediaStream | null = null;
   private socket: WebSocket | null = null;
   private isTranscribing = false;
 
   constructor() {
-    this.client = new TranscribeStreamingClient(getAwsConfig());
+    this.client = new TranscribeClient(getAwsConfig());
   }
 
   async startTranscription(onTranscriptUpdate: (text: string) => void): Promise<void> {
@@ -65,15 +65,26 @@ class TranscriptionService {
   private async startAwsTranscription(onTranscriptUpdate: (text: string) => void): Promise<void> {
     // This would be the actual AWS implementation with valid credentials
     try {
-      const command = new StartStreamTranscriptionCommand({
-        LanguageCode: "en-US",
-        MediaEncoding: "pcm",
-        MediaSampleRateHertz: 44100,
-      });
-
-      // In a real implementation, we would process the audio chunks and stream them to AWS
-      // For now this is just placeholder code for the future implementation
+      // Note: We're changing the implementation here to use the standard TranscribeClient
+      // instead of TranscribeStreamingClient which requires a different package
       console.log("AWS Transcription would start here with valid credentials");
+      
+      // This is just placeholder code showing how we would use the non-streaming API
+      // In a real implementation, we would create a job and poll for results
+      /*
+      const command = new StartTranscriptionJobCommand({
+        TranscriptionJobName: `meeting-${Date.now()}`,
+        LanguageCode: "en-US",
+        MediaFormat: "wav",
+        Media: {
+          MediaFileUri: "s3://example-bucket/example-audio.wav" // This would be your S3 URI
+        }
+      });
+      
+      const response = await this.client.send(command);
+      console.log("Transcription job started:", response);
+      */
+      
     } catch (error) {
       console.error("Error in AWS transcription:", error);
       throw error;
