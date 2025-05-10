@@ -1,4 +1,3 @@
-
 import { 
   TranscribeClient,
   StartTranscriptionJobCommand,
@@ -24,20 +23,35 @@ class TranscriptionService {
 
   constructor() {
     const awsConfig = getAwsConfig();
+    console.log("AWS Config on initialization:", {
+      region: awsConfig.region,
+      hasAccessKey: !!awsConfig.credentials.accessKeyId,
+      hasSecretKey: !!awsConfig.credentials.secretAccessKey,
+      hasSessionToken: !!awsConfig.credentials.sessionToken,
+      s3Bucket: this.s3Bucket
+    });
+    
     this.transcribeClient = new TranscribeClient(awsConfig);
     this.s3Client = new S3Client(awsConfig);
   }
 
   async startTranscription(onTranscriptUpdate: (text: string) => void): Promise<void> {
     try {
+      console.log("Starting transcription service");
+      
       // Get audio stream from user's microphone
       this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      console.log("Microphone access granted");
+      
       this.audioChunks = [];
       
       // Configure media recorder to capture audio
       this.mediaRecorder = new MediaRecorder(this.stream);
+      console.log("MediaRecorder created with MIME type:", this.mediaRecorder.mimeType);
+      
       this.mediaRecorder.addEventListener('dataavailable', (event) => {
         if (event.data.size > 0) {
+          console.log(`Audio chunk received: ${event.data.size} bytes`);
           this.audioChunks.push(event.data);
         }
       });
@@ -48,10 +62,14 @@ class TranscriptionService {
         getAwsConfig().credentials.accessKeyId !== "YOUR_ACCESS_KEY_ID" && 
         getAwsConfig().credentials.secretAccessKey !== "YOUR_SECRET_ACCESS_KEY";
       
+      console.log("Using AWS Transcribe with credentials valid:", hasValidCredentials);
+      
       if (hasValidCredentials) {
-        console.log("Using AWS Transcribe with valid credentials");
+        console.log("Starting AWS transcription");
         this.mediaRecorder.start(1000); // Collect data in 1-second chunks
         this.startAwsTranscription(onTranscriptUpdate);
+        // Add an immediate transcript update to verify the function is working
+        onTranscriptUpdate("Starting transcription with AWS...");
       } else {
         console.log("Using mock transcription due to missing credentials");
         this.startMockTranscription(onTranscriptUpdate);
@@ -99,17 +117,34 @@ class TranscriptionService {
         if (!this.isTranscribing) return;
         
         try {
+          console.log("Recording stopped, processing audio chunks:", this.audioChunks.length);
+          
           // Combine audio chunks into a single blob
           const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm' });
+          console.log("Audio blob created with size:", audioBlob.size);
           
-          // Upload to S3
-          const s3Key = `${this.s3KeyPrefix}${this.jobName}.webm`;
-          await this.uploadToS3(audioBlob, s3Key);
-          
-          // Start transcription job
-          await this.startTranscriptionJob(s3Key, onTranscriptUpdate);
+          if (audioBlob.size > 0) {
+            // Upload to S3
+            const s3Key = `${this.s3KeyPrefix}${this.jobName}.webm`;
+            console.log("Uploading to S3 with key:", s3Key);
+            
+            try {
+              const s3Uri = await this.uploadToS3(audioBlob, s3Key);
+              console.log("S3 upload successful, URI:", s3Uri);
+              
+              // Start transcription job
+              await this.startTranscriptionJob(s3Key, onTranscriptUpdate);
+            } catch (s3Error) {
+              console.error("S3 or transcription error:", s3Error);
+              onTranscriptUpdate("Error: Failed to process audio. Check console for details.");
+            }
+          } else {
+            console.error("No audio recorded (blob size is 0)");
+            onTranscriptUpdate("Error: No audio recorded.");
+          }
         } catch (error) {
           console.error("Error processing recording:", error);
+          onTranscriptUpdate("Error: Failed to process recording.");
         }
       });
     } catch (error) {
@@ -120,9 +155,11 @@ class TranscriptionService {
   
   private async uploadToS3(audioBlob: Blob, key: string): Promise<string> {
     try {
+      console.log("Converting audio blob to buffer for S3 upload");
       const arrayBuffer = await audioBlob.arrayBuffer();
       const audioBuffer = new Uint8Array(arrayBuffer);
       
+      console.log("Preparing S3 upload command for bucket:", this.s3Bucket);
       const command = new PutObjectCommand({
         Bucket: this.s3Bucket,
         Key: key,
@@ -130,6 +167,7 @@ class TranscriptionService {
         ContentType: 'audio/webm',
       });
       
+      console.log("Sending upload command to S3");
       await this.s3Client.send(command);
       const s3Uri = `s3://${this.s3Bucket}/${key}`;
       console.log("Audio uploaded to S3:", s3Uri);
@@ -143,6 +181,7 @@ class TranscriptionService {
   private async startTranscriptionJob(s3Key: string, onTranscriptUpdate: (text: string) => void): Promise<void> {
     try {
       const s3Uri = `s3://${this.s3Bucket}/${s3Key}`;
+      console.log("Starting transcription job with S3 URI:", s3Uri);
       
       const command = new StartTranscriptionJobCommand({
         TranscriptionJobName: this.jobName,
@@ -155,13 +194,18 @@ class TranscriptionService {
         OutputKey: `transcripts/${this.jobName}.json`,
       });
       
+      console.log("Sending start transcription job command");
       const response = await this.transcribeClient.send(command);
       console.log("Transcription job started:", response);
+      onTranscriptUpdate("Transcription job started. Processing audio...");
       
       // Poll for job completion
       this.pollingInterval = window.setInterval(async () => {
         try {
+          console.log("Checking transcription job status");
           const status = await this.checkTranscriptionStatus(onTranscriptUpdate);
+          console.log("Current transcription status:", status);
+          
           if (status === 'COMPLETED' || status === 'FAILED') {
             if (this.pollingInterval) {
               clearInterval(this.pollingInterval);
@@ -178,6 +222,7 @@ class TranscriptionService {
       }, 5000); // Check every 5 seconds
     } catch (error) {
       console.error("Error starting transcription job:", error);
+      onTranscriptUpdate("Error: Failed to start transcription job.");
       throw error;
     }
   }
@@ -217,21 +262,26 @@ class TranscriptionService {
   }
 
   stopTranscription(): void {
+    console.log("Stopping transcription service");
     this.isTranscribing = false;
     
     if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+      console.log("Stopping media recorder");
       this.mediaRecorder.stop();
     }
     
     if (this.stream) {
+      console.log("Stopping audio tracks");
       this.stream.getTracks().forEach(track => track.stop());
     }
     
     if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+      console.log("Closing WebSocket connection");
       this.socket.close();
     }
     
     if (this.pollingInterval) {
+      console.log("Clearing polling interval");
       clearInterval(this.pollingInterval);
       this.pollingInterval = null;
     }
@@ -240,6 +290,7 @@ class TranscriptionService {
     this.stream = null;
     this.socket = null;
     this.audioChunks = [];
+    console.log("Transcription service stopped");
   }
 }
 
