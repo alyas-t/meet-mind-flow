@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Mic, MicOff, Settings } from 'lucide-react';
 import { toast } from 'sonner';
 import transcriptionService from '@/services/aws/transcriptionService';
-import { getAwsConfig } from '@/services/aws/config';
+import { getAwsConfig, isAwsConfigured } from '@/services/aws/config';
 
 interface AudioRecorderProps {
   onTranscriptUpdate: (text: string) => void;
@@ -21,25 +21,26 @@ const AudioRecorder = ({ onTranscriptUpdate }: AudioRecorderProps) => {
   useEffect(() => {
     // Check if AWS is properly configured
     const config = getAwsConfig();
-    const awsConfigured = 
-      config.credentials.accessKeyId !== "YOUR_ACCESS_KEY_ID" && 
-      config.credentials.secretAccessKey !== "YOUR_SECRET_ACCESS_KEY";
+    const awsConfigured = isAwsConfigured();
     
     setIsUsingAws(awsConfigured);
-    console.log("AWS configuration status:", {
-      configured: awsConfigured,
-      region: config.region,
-      hasSessionToken: !!config.credentials.sessionToken,
-      bucket: import.meta.env.VITE_S3_BUCKET_NAME
-    });
-
+    
     // Display S3 bucket info
-    if (import.meta.env.VITE_S3_BUCKET_NAME) {
-      setRecordingStatus(`Using S3 bucket: ${import.meta.env.VITE_S3_BUCKET_NAME}`);
-    } else {
-      setAwsError("S3 bucket name not configured. Please set VITE_S3_BUCKET_NAME.");
+    const s3BucketName = config.s3BucketName;
+    
+    if (awsConfigured) {
+      onTranscriptUpdate(`AWS Configuration: Using region ${config.region}`);
+      
+      if (s3BucketName) {
+        onTranscriptUpdate(`S3 Bucket: ${s3BucketName}`);
+        setRecordingStatus(`Using S3 bucket: ${s3BucketName}`);
+      } else {
+        const error = "S3 bucket name not configured. Please set VITE_S3_BUCKET_NAME in your .env file.";
+        onTranscriptUpdate(`Error: ${error}`);
+        setAwsError(error);
+      }
     }
-  }, []);
+  }, [onTranscriptUpdate]);
 
   // Set up timer to track recording duration
   useEffect(() => {
@@ -71,12 +72,27 @@ const AudioRecorder = ({ onTranscriptUpdate }: AudioRecorderProps) => {
     try {
       setAwsError(null);
       setRecordingStatus("Initializing microphone...");
+      
+      // Check S3 bucket configuration
+      const config = getAwsConfig();
+      if (!config.s3BucketName && isAwsConfigured()) {
+        const error = "S3 bucket name not configured. Please set VITE_S3_BUCKET_NAME in your .env file.";
+        onTranscriptUpdate(`Error: ${error}`);
+        setAwsError(error);
+        setRecordingStatus("");
+        toast.error(error);
+        return;
+      }
+      
+      onTranscriptUpdate("Starting audio recording...");
+      
       await transcriptionService.startTranscription((text) => {
         onTranscriptUpdate(text);
         setRecordingStatus("Transcribing...");
       }, (errorMessage) => {
         setAwsError(errorMessage);
         setRecordingStatus("Error detected. See below.");
+        onTranscriptUpdate(`Error: ${errorMessage}`);
         toast.error(errorMessage);
       });
       setIsRecording(true);
@@ -85,7 +101,9 @@ const AudioRecorder = ({ onTranscriptUpdate }: AudioRecorderProps) => {
     } catch (error) {
       console.error("Error accessing microphone:", error);
       setRecordingStatus("");
-      setAwsError(error instanceof Error ? error.message : "Unknown microphone error");
+      const errorMessage = error instanceof Error ? error.message : "Unknown microphone error";
+      setAwsError(errorMessage);
+      onTranscriptUpdate(`Error: ${errorMessage}`);
       toast.error("Could not access microphone. Please check permissions.");
     }
   };
@@ -94,6 +112,7 @@ const AudioRecorder = ({ onTranscriptUpdate }: AudioRecorderProps) => {
     transcriptionService.stopTranscription();
     setIsRecording(false);
     setRecordingStatus("Processing recording...");
+    onTranscriptUpdate("Recording stopped. Processing audio...");
     
     // Clear status after a delay
     setTimeout(() => {
@@ -133,10 +152,15 @@ const AudioRecorder = ({ onTranscriptUpdate }: AudioRecorderProps) => {
       
       {awsError && (
         <div className="bg-red-100 text-red-800 text-sm px-3 py-2 rounded mb-4 w-full">
-          <p className="font-medium">AWS Error:</p>
+          <p className="font-medium">Error:</p>
           <p>{awsError}</p>
         </div>
       )}
+      
+      <div className="bg-amber-100 text-amber-800 text-sm px-3 py-2 rounded mb-4 w-full">
+        <p className="font-medium">Important:</p>
+        <p>You need to set a valid S3 bucket name in your .env file via the VITE_S3_BUCKET_NAME variable.</p>
+      </div>
       
       {isUsingAws && <div className="bg-green-100 text-green-800 text-xs font-medium px-2.5 py-0.5 rounded mb-4">AWS Transcribe Enabled</div>}
       

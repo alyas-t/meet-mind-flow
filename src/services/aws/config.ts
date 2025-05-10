@@ -8,13 +8,16 @@ export const getAwsConfig = () => {
   const secretAccessKey = import.meta.env.VITE_AWS_SECRET_ACCESS_KEY || "YOUR_SECRET_ACCESS_KEY";
   const sessionToken = import.meta.env.VITE_AWS_SESSION_TOKEN || null;
   
+  // Get S3 bucket name
+  const s3BucketName = import.meta.env.VITE_S3_BUCKET_NAME || "";
+  
   // Log configuration status (without revealing secrets)
   console.log("AWS credentials configuration:", {
     hasAccessKey: accessKeyId !== "YOUR_ACCESS_KEY_ID",
     hasSecretKey: secretAccessKey !== "YOUR_SECRET_ACCESS_KEY",
     hasSessionToken: !!sessionToken,
     region: AWS_REGION,
-    s3Bucket: import.meta.env.VITE_S3_BUCKET_NAME || "not configured"
+    s3Bucket: s3BucketName || "not configured"
   });
   
   return {
@@ -24,5 +27,15 @@ export const getAwsConfig = () => {
       secretAccessKey,
       sessionToken,
     },
+    s3BucketName,
   };
+};
+
+// Helper function to check if AWS is properly configured
+export const isAwsConfigured = () => {
+  const config = getAwsConfig();
+  return (
+    config.credentials.accessKeyId !== "YOUR_ACCESS_KEY_ID" && 
+    config.credentials.secretAccessKey !== "YOUR_SECRET_ACCESS_KEY"
+  );
 };

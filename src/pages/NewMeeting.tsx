@@ -9,27 +9,32 @@ import TranscriptPanel from '@/components/meeting/TranscriptPanel';
 import KeyPointsPanel from '@/components/meeting/KeyPointsPanel';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
-import { getAwsConfig } from '@/services/aws/config';
+import { getAwsConfig, isAwsConfigured } from '@/services/aws/config';
 
 const NewMeeting = () => {
   const [meetingTitle, setMeetingTitle] = useState<string>('Untitled Meeting');
   const [transcript, setTranscript] = useState<string[]>([]);
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [awsConfigured, setAwsConfigured] = useState<boolean>(false);
+  const [s3Configured, setS3Configured] = useState<boolean>(false);
   const navigate = useNavigate();
   
   useEffect(() => {
     // Check if AWS is properly configured
     const config = getAwsConfig();
-    const isConfigured = 
-      config.credentials.accessKeyId !== "YOUR_ACCESS_KEY_ID" && 
-      config.credentials.secretAccessKey !== "YOUR_SECRET_ACCESS_KEY";
+    const isConfigured = isAwsConfigured();
+    const hasS3Bucket = !!config.s3BucketName;
     
     setAwsConfigured(isConfigured);
+    setS3Configured(hasS3Bucket);
     
     if (!isConfigured) {
       toast.warning("AWS credentials not configured. Using mock data.", {
         duration: 5000,
+      });
+    } else if (!hasS3Bucket) {
+      toast.warning("AWS S3 bucket not configured. Please set VITE_S3_BUCKET_NAME in your .env file.", {
+        duration: 8000,
       });
     }
   }, []);
@@ -62,7 +67,7 @@ const NewMeeting = () => {
   };
   
   return (
-    <PageLayout className="py-6" showAwsNotice={!awsConfigured}>
+    <PageLayout className="py-6" showAwsNotice={!awsConfigured || !s3Configured}>
       <div className="mb-6">
         <Input
           value={meetingTitle}
@@ -71,6 +76,13 @@ const NewMeeting = () => {
         />
         <p className="text-gray-500">{new Date().toLocaleString()}</p>
       </div>
+      
+      {!s3Configured && awsConfigured && (
+        <div className="bg-amber-100 border border-amber-300 text-amber-800 px-4 py-3 rounded-md mb-6">
+          <p className="font-medium">S3 Bucket Not Configured</p>
+          <p className="text-sm">Please set the VITE_S3_BUCKET_NAME environment variable to your S3 bucket name.</p>
+        </div>
+      )}
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card className="p-4 md:col-span-1 bg-gray-50">

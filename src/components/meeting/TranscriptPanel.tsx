@@ -33,6 +33,10 @@ const TranscriptPanel: React.FC<TranscriptPanelProps> = ({ transcript, autoScrol
               <p className="text-blue-600 font-medium">{text}</p>
             ) : text.startsWith("Starting") || text.includes("job started") ? (
               <p className="text-green-600">{text}</p>
+            ) : text.startsWith("AWS Configuration:") ? (
+              <p className="text-purple-600">{text}</p>
+            ) : text.startsWith("S3 Bucket:") ? (
+              <p className="text-orange-600 font-medium">{text}</p>
             ) : (
               <p className="text-gray-800">{text}</p>
             )}
