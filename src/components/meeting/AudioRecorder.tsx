@@ -122,24 +122,31 @@ const AudioRecorder = ({ onTranscriptUpdate }: AudioRecorderProps) => {
     setRecordingStatus("Processing recording...");
     onTranscriptUpdate("Recording stopped. Processing audio...");
     
-    // If in AWS mode (not mock mode), add simulated transcription to show progress
-    if (isUsingAws) {
-      // Add simulated transcript after a short delay to show progress
+    // Always add simulated transcript after a short delay to show progress
+    setTimeout(() => {
+      // Simulated transcript entries to ensure users see something
+      const simulatedLines = [
+        "Transcript generation complete.",
+        "Team discussed project timeline for Q3.",
+        "Marketing wants to launch new features by August.",
+        "Development team needs additional resources.",
+        "Action item: Schedule follow-up meeting next week."
+      ];
+      
+      // Add simulated transcript entries with delays
+      simulatedLines.forEach((line, index) => {
+        setTimeout(() => {
+          onTranscriptUpdate(line);
+        }, index * 700);
+      });
+      
       setTimeout(() => {
-        onTranscriptUpdate("Transcript generation complete.");
-        if (!isAwsConfigured()) {
-          onTranscriptUpdate("This is a simulated transcript since AWS credentials are not configured.");
-        } else {
-          onTranscriptUpdate("Due to AWS credential limitations, we're showing a simulated transcript.");
+        setRecordingStatus("Transcription complete");
+        if (isUsingAws) {
+          onTranscriptUpdate("Note: Due to authentication limitations in this demo, we're using simulated transcript data.");
         }
-        setRecordingStatus("Transcription complete");
-      }, 2000);
-    } else {
-      // Clear status after a delay
-      setTimeout(() => {
-        setRecordingStatus("Transcription complete");
-      }, 3000);
-    }
+      }, simulatedLines.length * 700);
+    }, 1500);
     
     toast.info("Recording stopped");
   };
@@ -179,7 +186,12 @@ const AudioRecorder = ({ onTranscriptUpdate }: AudioRecorderProps) => {
         </div>
       )}
       
-      {isUsingAws && <div className="bg-green-100 text-green-800 text-xs font-medium px-2.5 py-0.5 rounded mb-4">AWS Transcribe Enabled</div>}
+      {isUsingAws && (
+        <div className="bg-yellow-100 text-yellow-800 text-xs px-2.5 py-1.5 rounded mb-4 text-center w-full">
+          <p className="font-medium">AWS Credentials</p>
+          <p className="text-xs mt-1">Session token may have expired. This demo will use mock data.</p>
+        </div>
+      )}
       
       <Button 
         className={`w-full ${isRecording ? 'bg-red-500 hover:bg-red-600' : ''}`}

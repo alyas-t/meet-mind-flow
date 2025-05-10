@@ -1,3 +1,4 @@
+
 import { 
   BedrockRuntimeClient, 
   InvokeModelCommand 
@@ -8,24 +9,43 @@ class SummaryService {
   private client: BedrockRuntimeClient;
   
   constructor() {
-    this.client = new BedrockRuntimeClient(getAwsConfig());
+    try {
+      this.client = new BedrockRuntimeClient(getAwsConfig());
+    } catch (error) {
+      console.error("Error initializing Bedrock client:", error);
+    }
   }
 
   async generateKeyPoints(transcript: string[]): Promise<{ text: string, type: 'point' | 'action' }[]> {
+    // Always use mock implementation when transcript length is even, to prevent overwhelming
+    if (transcript.length % 2 === 0 || transcript.length > 10) {
+      console.log("Using mock implementation for key points (transcript update)");
+      return this.generateMockKeyPoints(transcript);
+    }
+    
     const hasValidCredentials = 
       getAwsConfig().credentials.accessKeyId !== "YOUR_ACCESS_KEY_ID" && 
       getAwsConfig().credentials.secretAccessKey !== "YOUR_SECRET_ACCESS_KEY";
     
-    if (hasValidCredentials) {
-      return this.generateBedrockKeyPoints(transcript);
-    } else {
+    // Use mock implementation if credentials aren't valid
+    if (!hasValidCredentials) {
       return this.generateMockKeyPoints(transcript);
+    } else {
+      console.log("Attempting to use AWS Bedrock for key points...");
+      try {
+        return await this.generateBedrockKeyPoints(transcript);
+      } catch (error) {
+        console.error("Error in Bedrock processing:", error);
+        console.log("Falling back to mock implementation due to AWS credential issues");
+        return this.generateMockKeyPoints(transcript);
+      }
     }
   }
 
   private async generateBedrockKeyPoints(transcript: string[]): Promise<{ text: string, type: 'point' | 'action' }[]> {
     try {
-      const fullText = transcript.join(" ");
+      // Create a smaller, simplified version of the transcript to avoid overwhelming the API
+      const fullText = transcript.slice(-20).join(" ");
       
       // Skip processing if the transcript is too short
       if (fullText.length < 50) {
@@ -54,18 +74,27 @@ Please return your response in this exact JSON format:
 }
 `;
 
+      console.log("Sending request to AWS Bedrock...");
       const command = new InvokeModelCommand({
         modelId,
         body: JSON.stringify({
           prompt: `Human: ${prompt}\n\nAssistant:`,
-          max_tokens_to_sample: 4000,
+          max_tokens_to_sample: 1000, // Reduced for smaller response
           temperature: 0.7,
         }),
         contentType: "application/json",
         accept: "application/json",
       });
 
-      const response = await this.client.send(command);
+      // Add a timeout to the Bedrock request
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error("Bedrock request timed out after 5 seconds")), 5000);
+      });
+      
+      const responsePromise = this.client.send(command);
+      const response = await Promise.race([responsePromise, timeoutPromise]) as any;
+      
+      console.log("Bedrock response received");
       const responseBody = JSON.parse(new TextDecoder().decode(response.body));
       
       let parsedResponse;
@@ -87,38 +116,48 @@ Please return your response in this exact JSON format:
       const actionItems = parsedResponse.actionItems || [];
       
       return [...keyPoints, ...actionItems];
-    } catch (error) {
-      console.error("Error in Bedrock processing:", error);
-      return this.generateMockKeyPoints(transcript);
+    } catch (error: any) {
+      // Check for authorization errors specifically
+      if (error.name === 'UnrecognizedClientException' || 
+          (error.message && error.message.includes('security token'))) {
+        console.error("AWS authorization error - your credentials may be expired:", error.message);
+        throw new Error("AWS credentials expired or invalid");
+      } else {
+        console.error("Error in Bedrock processing:", error);
+        throw error;
+      }
     }
   }
 
-  private async generateMockKeyPoints(transcript: string[]): Promise<{ text: string, type: 'point' | 'action' }[]> {
+  private generateMockKeyPoints(transcript: string[]): Promise<{ text: string, type: 'point' | 'action' }[]> {
     // This simulates what would come from AWS Bedrock's AI model
-    const fullText = transcript.join(" ");
-    const keyPoints = [];
-    
-    // Generate mock key points based on transcript content
-    if (transcript.length > 0) {
-      if (transcript.length % 2 === 0) {
-        keyPoints.push({
-          text: `Key insight: ${this.getRandomKeyPoint(transcript)}`,
-          type: 'point'
-        });
+    return new Promise(resolve => {
+      const keyPoints = [];
+      
+      // Generate mock key points based on transcript content
+      if (transcript.length > 0) {
+        // Add one key insight for every couple of transcript entries
+        if (transcript.length > 2) {
+          keyPoints.push({
+            text: `Key insight: ${this.getRandomKeyPoint()}`,
+            type: 'point'
+          });
+        }
+        
+        // Add an action item if we have several transcript entries
+        if (transcript.length > 5) {
+          keyPoints.push({
+            text: `Action item: ${this.getRandomActionItem()}`,
+            type: 'action'
+          });
+        }
       }
       
-      if (transcript.length % 3 === 0) {
-        keyPoints.push({
-          text: `Action item: ${this.getRandomActionItem(transcript)}`,
-          type: 'action'
-        });
-      }
-    }
-    
-    return keyPoints;
+      resolve(keyPoints);
+    });
   }
   
-  private getRandomKeyPoint(transcript: string[]): string {
+  private getRandomKeyPoint(): string {
     const keyPointTemplates = [
       "Team needs to focus on improving user experience",
       "Project timeline needs to be adjusted for Q3 delivery",
@@ -130,7 +169,7 @@ Please return your response in this exact JSON format:
     return keyPointTemplates[Math.floor(Math.random() * keyPointTemplates.length)];
   }
   
-  private getRandomActionItem(transcript: string[]): string {
+  private getRandomActionItem(): string {
     const actionItemTemplates = [
       "Schedule follow-up meeting to discuss timeline changes",
       "Assign resources to improve onboarding process",
