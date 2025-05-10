@@ -1,8 +1,8 @@
 
 // AWS configuration for services
-export const AWS_REGION = "us-east-1"; // Change this to your preferred AWS region
+export const AWS_REGION = import.meta.env.VITE_AWS_REGION || "us-east-1";
 
-// Replace these with your actual AWS credentials
+// Get AWS credentials from environment variables
 export const getAwsConfig = () => {
   return {
     region: AWS_REGION,

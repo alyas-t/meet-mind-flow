@@ -18,8 +18,8 @@ class TranscriptionService {
   private jobName: string = '';
   private pollingInterval: number | null = null;
   
-  // Update these with your S3 bucket information
-  private s3Bucket = 'your-meeting-transcripts-bucket';
+  // Use environment variables for S3 bucket if available
+  private s3Bucket = import.meta.env.VITE_S3_BUCKET_NAME || 'your-meeting-transcripts-bucket';
   private s3KeyPrefix = 'meeting-recordings/';
 
   constructor() {
