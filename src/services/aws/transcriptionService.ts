@@ -19,7 +19,7 @@ class TranscriptionService {
   private pollingInterval: number | null = null;
   
   // Use environment variables for S3 bucket if available
-  private s3Bucket = import.meta.env.VITE_S3_BUCKET_NAME || 'your-meeting-transcripts-bucket';
+  private s3Bucket = import.meta.env.VITE_S3_BUCKET_NAME || 'mindscribe';
   private s3KeyPrefix = 'meeting-recordings/';
 
   constructor() {
