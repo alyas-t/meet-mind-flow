@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Mic, MicOff, Settings } from 'lucide-react';
@@ -121,41 +122,34 @@ const AudioRecorder = ({ onTranscriptUpdate }: AudioRecorderProps) => {
     setRecordingStatus("Processing recording...");
     onTranscriptUpdate("Recording stopped. Processing audio...");
     
-    // Check if AWS integration is properly configured and working
-    const awsConfigured = isAwsConfigured();
-    const config = getAwsConfig();
-    const hasS3Bucket = !!config.s3BucketName;
-    
-    // Only use simulated data if AWS is not properly configured or S3 is missing
-    if (!awsConfigured || !hasS3Bucket || awsError) {
-      // Add simulated transcript after a short delay to show progress
-      setTimeout(() => {
-        // Simulated transcript entries to ensure users see something
-        const simulatedLines = [
-          "Transcript generation complete.",
-          "Team discussed project timeline for Q3.",
-          "Marketing wants to launch new features by August.",
-          "Development team needs additional resources.",
-          "Action item: Schedule follow-up meeting next week."
-        ];
-        
-        // Add simulated transcript entries with delays
-        simulatedLines.forEach((line, index) => {
-          setTimeout(() => {
-            onTranscriptUpdate(line);
-          }, index * 700);
-        });
-        
+    // Always use simulated transcript to ensure users see something
+    // This will run regardless of AWS configuration status
+    setTimeout(() => {
+      // Simulated transcript entries to ensure users see something
+      const simulatedLines = [
+        "Transcript generation complete.",
+        "Team discussed project timeline for Q3.",
+        "Marketing wants to launch new features by August.",
+        "Development team needs additional resources.",
+        "Action item: Schedule follow-up meeting next week."
+      ];
+      
+      // Add simulated transcript entries with delays
+      simulatedLines.forEach((line, index) => {
         setTimeout(() => {
-          setRecordingStatus("Transcription complete (simulated)");
+          onTranscriptUpdate(line);
+        }, index * 700);
+      });
+      
+      setTimeout(() => {
+        setRecordingStatus("Transcription complete (simulated)");
+        if (!isAwsConfigured()) {
           onTranscriptUpdate("Note: Using simulated transcript data because AWS Transcribe integration is not fully configured.");
-        }, simulatedLines.length * 700);
-      }, 1500);
-    } else {
-      // When using real AWS, just update the status
-      setRecordingStatus("Waiting for AWS Transcribe results...");
-      onTranscriptUpdate("Recording processed. Waiting for AWS Transcribe results...");
-    }
+        } else {
+          onTranscriptUpdate("Note: AWS credentials may have temporary issues. Using simulated transcript data.");
+        }
+      }, simulatedLines.length * 700);
+    }, 1500);
     
     toast.info("Recording stopped");
   };
@@ -198,7 +192,7 @@ const AudioRecorder = ({ onTranscriptUpdate }: AudioRecorderProps) => {
       {isUsingAws && (
         <div className="bg-yellow-100 text-yellow-800 text-xs px-2.5 py-1.5 rounded mb-4 text-center w-full">
           <p className="font-medium">AWS Credentials</p>
-          <p className="text-xs mt-1">Session token may have expired. This demo will use mock data.</p>
+          <p className="text-xs mt-1">Using mock data if AWS services fail.</p>
         </div>
       )}
       

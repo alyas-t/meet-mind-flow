@@ -20,13 +20,21 @@ export const getAwsConfig = () => {
     s3Bucket: s3BucketName
   });
   
+  // Create credentials object with or without session token
+  const credentials = {
+    accessKeyId,
+    secretAccessKey
+  };
+  
+  // Only add sessionToken if it exists (prevents undefined value)
+  if (sessionToken) {
+    // @ts-ignore - TypeScript might complain about adding a property
+    credentials.sessionToken = sessionToken;
+  }
+  
   return {
     region: AWS_REGION,
-    credentials: {
-      accessKeyId,
-      secretAccessKey,
-      sessionToken,
-    },
+    credentials,
     s3BucketName,
   };
 };
