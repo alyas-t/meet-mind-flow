@@ -1,4 +1,5 @@
-// src/components/AudioRecorder.tsx
+
+// src/components/meeting/AudioRecorder.tsx
 import React from 'react';
 import { Button } from "@/components/ui/button";
 import { MicIcon, StopCircleIcon } from "lucide-react";

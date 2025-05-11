@@ -1,3 +1,4 @@
+
 // src/components/KeyPointsPanel.tsx
 import React from 'react';
 import { 
@@ -14,7 +15,7 @@ interface KeyPointsPanelProps {
   keyPoints: string[];
   actionItems: string[];
   isLoading: boolean;
-  error: string | null;
+  error: string;
 }
 
 const KeyPointsPanel: React.FC<KeyPointsPanelProps> = ({ 

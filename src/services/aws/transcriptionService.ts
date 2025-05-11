@@ -1,3 +1,4 @@
+
 // src/services/aws/transcriptionService.ts
 interface AwsConfig {
   region: string;
@@ -5,8 +6,7 @@ interface AwsConfig {
 }
 
 class TranscriptionService {
-  private recognition: SpeechRecognition | null = null;
-  private isRecording: boolean = false;
+  private _isRecording: boolean = false;
   private transcript: string[] = [];
   private onTranscriptUpdate: ((message: string) => void) | null = null;
   private onRecordingStatusChange: ((status: boolean) => void) | null = null;
@@ -15,6 +15,7 @@ class TranscriptionService {
     region: 'us-west-2',
     bucketName: 'mindscribe'
   };
+  private recognition: SpeechRecognition | null = null;
 
   init(): void {
     if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
@@ -48,9 +49,9 @@ class TranscriptionService {
     };
 
     this.recognition.onend = () => {
-      if (this.isRecording) {
+      if (this._isRecording) {
         // If we were still recording, try to restart
-        this.recognition.start();
+        this.recognition?.start();
       }
     };
 
@@ -59,6 +60,10 @@ class TranscriptionService {
     if (this.onTranscriptUpdate) {
       this.onTranscriptUpdate(configMessage);
     }
+  }
+
+  isRecording(): boolean {
+    return this._isRecording;
   }
 
   startRecording(): boolean {
@@ -73,7 +78,7 @@ class TranscriptionService {
       }
     }
 
-    this.isRecording = true;
+    this._isRecording = true;
     this.transcript = []; // Reset transcript for new recording
 
     try {
@@ -93,7 +98,7 @@ class TranscriptionService {
         this.onTranscriptUpdate(`Error starting recording: ${error.message}`);
       }
       
-      this.isRecording = false;
+      this._isRecording = false;
       if (this.onRecordingStatusChange) {
         this.onRecordingStatusChange(false);
       }
@@ -103,9 +108,9 @@ class TranscriptionService {
   }
 
   stopRecording(): string | null {
-    if (this.recognition && this.isRecording) {
+    if (this.recognition && this._isRecording) {
       this.recognition.stop();
-      this.isRecording = false;
+      this._isRecording = false;
       
       if (this.onRecordingStatusChange) {
         this.onRecordingStatusChange(false);

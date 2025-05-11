@@ -124,31 +124,65 @@ const NewMeeting = () => {
     setIsSaving(true);
     
     try {
+      // Stop recording if it's still going
+      if (isRecording) {
+        handleStopRecording();
+      }
+      
+      // Create meeting data object
+      const meetingData = {
+        id: Date.now().toString(),
+        title: meetingTitle,
+        date: new Date().toISOString(),
+        transcript: transcript,
+        keyPoints: keyPoints,
+        actionItems: actionItems,
+        createdAt: new Date().toISOString()
+      };
+      
+      // Get existing meetings or initialize empty array
+      const existingMeetingsJSON = localStorage.getItem('meetings');
+      const existingMeetings = existingMeetingsJSON ? JSON.parse(existingMeetingsJSON) : [];
+      
+      // Add new meeting and save back to localStorage
+      existingMeetings.push(meetingData);
+      localStorage.setItem('meetings', JSON.stringify(existingMeetings));
+      
       if (awsConfigured) {
         // In a production app, this would save meeting data to DynamoDB
         await new Promise(resolve => setTimeout(resolve, 1000));
         toast.success("Meeting saved to AWS successfully");
       } else {
-        // Mock saving
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        toast.success("Meeting saved successfully (mock)");
+        toast.success("Meeting saved successfully", {
+          description: "Meeting data saved to local storage"
+        });
       }
       
       navigate("/dashboard");
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving meeting:", error);
-      toast.error("Failed to save meeting. Please try again.");
+      toast.error("Failed to save meeting", {
+        description: error.message || "Please try again"
+      });
     } finally {
       setIsSaving(false);
     }
   };
   
+  const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setMeetingTitle(e.target.value);
+  };
+  
   return (
     <PageLayout className="py-6" showAwsNotice={!awsConfigured || !s3Configured}>
       <div className="mb-6">
-        <div className="text-app-blue text-2xl font-bold">
-          {meetingTitle}
-        </div>
+        <Input 
+          type="text"
+          value={meetingTitle}
+          onChange={handleTitleChange}
+          className="text-app-blue text-2xl font-bold bg-transparent border-0 focus:border-b focus:ring-0 p-0 h-auto w-full"
+          placeholder="Meeting Title"
+        />
         <p className="text-gray-500">{new Date().toLocaleString()}</p>
       </div>
       
@@ -167,7 +201,6 @@ const NewMeeting = () => {
               isRecording={isRecording}
               onStartRecording={handleStartRecording}
               onStopRecording={handleStopRecording}
-              onTranscriptUpdate={handleTranscriptUpdate}
             />
           </Card>
         </div>
@@ -182,8 +215,7 @@ const NewMeeting = () => {
             keyPoints={keyPoints}
             actionItems={actionItems}
             isLoading={isLoading}
-            error={error}
-            transcript={transcript} // For backward compatibility
+            error={error || ""}
           />
         </div>
       </div>
