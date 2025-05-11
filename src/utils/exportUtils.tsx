@@ -44,32 +44,39 @@ export function downloadAsFile(content: string, filename: string, type: string =
  */
 export async function shareContent(title: string, text: string, url?: string) {
   try {
-    if (navigator.share) {
-      // Use Web Share API if available
-      await navigator.share({
-        title,
-        text,
-        url
-      });
-      
-      toast.success("Shared successfully");
-    } else {
-      // Fall back to clipboard copy
-      await navigator.clipboard.writeText(text);
-      
-      toast.success("Copied to clipboard", {
-        description: "The content has been copied to your clipboard."
-      });
+    // Check if Web Share API is available and in a secure context (HTTPS)
+    if (navigator.share && window.isSecureContext) {
+      try {
+        // Use Web Share API
+        await navigator.share({
+          title,
+          text,
+          url
+        });
+        
+        toast.success("Shared successfully");
+        return;
+      } catch (shareError) {
+        console.error("Error with Web Share API:", shareError);
+        // If user cancelled sharing, don't proceed to clipboard
+        if (shareError instanceof DOMException && shareError.name === 'AbortError') {
+          toast.info("Share cancelled");
+          return;
+        }
+        // For other errors like permission denied, fall back to clipboard
+      }
     }
+    
+    // Fall back to clipboard copy
+    await navigator.clipboard.writeText(text);
+    
+    toast.success("Copied to clipboard", {
+      description: "The content has been copied to your clipboard."
+    });
   } catch (error) {
     console.error("Error sharing content:", error);
-    if (error instanceof DOMException && error.name === 'AbortError') {
-      // User canceled share operation
-      toast.info("Share cancelled");
-    } else {
-      toast.error("Sharing failed", {
-        description: "There was a problem sharing the content."
-      });
-    }
+    toast.error("Sharing failed", {
+      description: "Unable to share or copy content. Try again or use another method."
+    });
   }
 }
