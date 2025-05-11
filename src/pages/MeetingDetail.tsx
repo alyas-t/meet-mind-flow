@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -6,8 +7,8 @@ import TranscriptPanel from '@/components/meeting/TranscriptPanel';
 import KeyPointsPanel from '@/components/meeting/KeyPointsPanel';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
-import { downloadAsFile } from '@/utils/exportUtils';
-import { Download } from 'lucide-react';
+import { downloadAsFile, shareContent } from '@/utils/exportUtils';
+import { Download, Share2 } from 'lucide-react';
 
 interface Meeting {
   id: string;
@@ -120,6 +121,40 @@ const MeetingDetail = () => {
     downloadAsFile(content, fileName);
   };
 
+  const handleShareNotes = async () => {
+    if (!meeting) return;
+    
+    // Format meeting information for sharing
+    const formattedDate = new Date(meeting.date).toLocaleDateString();
+    const title = `Meeting Notes: ${meeting.title}`;
+    
+    // Create summary text with key points and action items
+    let summaryText = `Meeting Notes: ${meeting.title}\nDate: ${formattedDate}\n\n`;
+    
+    // Add key points
+    if (meeting.key_points.length > 0) {
+      summaryText += "Key Points:\n";
+      meeting.key_points.forEach((point, index) => {
+        summaryText += `${index + 1}. ${point}\n`;
+      });
+      summaryText += "\n";
+    }
+    
+    // Add action items
+    if (meeting.action_items.length > 0) {
+      summaryText += "Action Items:\n";
+      meeting.action_items.forEach((item, index) => {
+        summaryText += `${index + 1}. ${item}\n`;
+      });
+    }
+    
+    // Get the current URL for sharing
+    const url = window.location.href;
+    
+    // Share the content
+    await shareContent(title, summaryText, url);
+  };
+
   return (
     <PageLayout className="py-6">
       <div className="mb-6">
@@ -141,7 +176,9 @@ const MeetingDetail = () => {
         <Button variant="outline" onClick={handleDownloadTranscript}>
           <Download className="h-4 w-4 mr-2" /> Download Transcript
         </Button>
-        <Button>Share Notes</Button>
+        <Button onClick={handleShareNotes}>
+          <Share2 className="h-4 w-4 mr-2" /> Share Notes
+        </Button>
       </div>
     </PageLayout>
   );
