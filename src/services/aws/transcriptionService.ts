@@ -1,99 +1,117 @@
-import { 
-  TranscribeClient,
-  StartTranscriptionJobCommand,
-  GetTranscriptionJobCommand
-} from "@aws-sdk/client-transcribe";
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+// TranscriptionService.ts
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getAwsConfig } from "./config";
 
 class TranscriptionService {
-  private transcribeClient: TranscribeClient;
-  private s3Client: S3Client;
+  private recognition: SpeechRecognition | null = null;
   private mediaRecorder: MediaRecorder | null = null;
-  private stream: MediaStream | null = null;
-  private socket: WebSocket | null = null;
-  private isTranscribing = false;
   private audioChunks: Blob[] = [];
-  private jobName: string = '';
-  private pollingInterval: number | null = null;
-  private onErrorCallback: ((error: string) => void) | null = null;
+  private stream: MediaStream | null = null;
+  private isTranscribing: boolean = false;
   private transcriptCallback: ((text: string) => void) | null = null;
-  
-  // Use the bucket name from config, 'mindscribe' is now a valid value
+  private onErrorCallback: ((error: string) => void) | null = null;
+  private transcriptSegments: string[] = [];
+  private geminiApi: GoogleGenerativeAI | null = null;
+  private geminiModel: any = null;
+  private processingInterval: number | null = null;
+  private uploadInterval: number | null = null;
+  private geminiApiKey: string;
+  private sessionId: string;
+  private s3Client: S3Client;
   private s3Bucket: string;
   private s3KeyPrefix = 'meeting-recordings/';
 
   constructor() {
+    // Generate a unique session ID
+    this.sessionId = `meeting-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    
+    // Get API key from environment variables or config
+    this.geminiApiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
+    
+    // Initialize AWS S3 client
     const awsConfig = getAwsConfig();
+    this.s3Client = new S3Client(awsConfig);
     this.s3Bucket = awsConfig.s3BucketName;
     
-    console.log("AWS Config on initialization:", {
-      region: awsConfig.region,
-      hasAccessKey: !!awsConfig.credentials.accessKeyId && awsConfig.credentials.accessKeyId !== "YOUR_ACCESS_KEY_ID",
-      hasSecretKey: !!awsConfig.credentials.secretAccessKey && awsConfig.credentials.secretAccessKey !== "YOUR_SECRET_ACCESS_KEY",
-      hasSessionToken: !!awsConfig.credentials.sessionToken,
-      s3Bucket: this.s3Bucket
+    console.log("S3 Configuration:", {
+      bucket: this.s3Bucket,
+      keyPrefix: this.s3KeyPrefix,
+      sessionId: this.sessionId
     });
     
-    this.transcribeClient = new TranscribeClient(awsConfig);
-    this.s3Client = new S3Client(awsConfig);
+    // Check if browser supports Speech Recognition
+    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+      console.error("Speech recognition not supported in this browser");
+    } else {
+      console.log("Speech recognition is supported");
+    }
+    
+    // Initialize Gemini if API key is available
+    if (this.geminiApiKey) {
+      try {
+        this.geminiApi = new GoogleGenerativeAI(this.geminiApiKey);
+        this.geminiModel = this.geminiApi.getGenerativeModel({ model: "gemini-pro" });
+        console.log("Gemini API initialized successfully");
+      } catch (error) {
+        console.error("Error initializing Gemini API:", error);
+      }
+    } else {
+      console.warn("No Gemini API key provided. Will use mock processing.");
+    }
   }
-
+  
   async startTranscription(
     onTranscriptUpdate: (text: string) => void,
     onError?: (error: string) => void
   ): Promise<void> {
     try {
       console.log("Starting transcription service");
-      this.onErrorCallback = onError || null;
       this.transcriptCallback = onTranscriptUpdate;
-      
-      // The bucket is now valid as long as it exists in AWS
-      if (!this.s3Bucket) {
-        const error = "S3 bucket not configured. Please set VITE_S3_BUCKET_NAME.";
-        console.error(error);
-        if (this.onErrorCallback) this.onErrorCallback(error);
-        return;
-      }
-      
-      // Get audio stream from user's microphone
-      this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      console.log("Microphone access granted");
-      
+      this.onErrorCallback = onError || null;
+      this.transcriptSegments = [];
       this.audioChunks = [];
       
-      // Configure media recorder to capture audio
-      this.mediaRecorder = new MediaRecorder(this.stream);
-      console.log("MediaRecorder created with MIME type:", this.mediaRecorder.mimeType);
+      // Request audio permission
+      this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      console.log("Audio permission granted");
       
-      this.mediaRecorder.addEventListener('dataavailable', (event) => {
-        if (event.data.size > 0) {
-          console.log(`Audio chunk received: ${event.data.size} bytes`);
-          this.audioChunks.push(event.data);
-        }
-      });
+      // Start audio recording for storage
+      this.startAudioRecording();
       
+      // Initialize speech recognition
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      this.recognition = new SpeechRecognition();
+      
+      // Configure speech recognition
+      this.recognition.continuous = true;
+      this.recognition.interimResults = true;
+      this.recognition.lang = 'en-US';
+      
+      // Set up event handlers
+      this.recognition.onresult = this.handleSpeechResult.bind(this);
+      this.recognition.onerror = this.handleSpeechError.bind(this);
+      this.recognition.onend = this.handleSpeechEnd.bind(this);
+      
+      // Inform user transcription is starting
+      if (this.transcriptCallback) {
+        this.transcriptCallback("Starting transcription...");
+      }
+      
+      // Start listening
+      this.recognition.start();
       this.isTranscribing = true;
       
-      const hasValidCredentials = 
-        getAwsConfig().credentials.accessKeyId !== "YOUR_ACCESS_KEY_ID" && 
-        getAwsConfig().credentials.secretAccessKey !== "YOUR_SECRET_ACCESS_KEY";
+      // Set up periodic processing of transcript with Gemini
+      this.processingInterval = window.setInterval(() => {
+        this.processTranscriptWithGemini();
+      }, 30000); // Process every 30 seconds
       
-      console.log("Using AWS Transcribe with credentials valid:", hasValidCredentials);
+      // Set up periodic upload to S3
+      this.uploadInterval = window.setInterval(() => {
+        this.uploadTranscriptToS3();
+      }, 15000); // Upload every 15 seconds
       
-      if (hasValidCredentials) {
-        console.log("Starting AWS transcription");
-        this.mediaRecorder.start(1000); // Collect data in 1-second chunks
-        this.startAwsTranscription();
-        // Add an immediate transcript update to verify the function is working
-        if (this.transcriptCallback) this.transcriptCallback("Starting transcription with AWS...");
-      } else {
-        const error = "AWS credentials are not properly configured";
-        console.error(error);
-        if (this.onErrorCallback) this.onErrorCallback(error);
-        console.log("Using mock transcription due to missing credentials");
-        this.startMockTranscription();
-      }
     } catch (error) {
       console.error("Error starting transcription:", error);
       if (this.onErrorCallback) {
@@ -102,112 +120,248 @@ class TranscriptionService {
       throw error;
     }
   }
-
-  private startMockTranscription(): void {
-    if (!this.transcriptCallback) return;
+  
+  private startAudioRecording(): void {
+    if (!this.stream) return;
     
-    // Mock transcription data - this simulates what would come from AWS Transcribe
-    const mockTranscriptionText = [
-      "Hello everyone, thank you for joining today's meeting.",
-      "Let's start by discussing the current project status.",
-      "We've made good progress on the first milestone.",
-      "I think we should prioritize the user interface improvements.",
-      "Does anyone have questions about the timeline?",
-      "We should allocate more resources to testing before the next release.",
-      "Let's make sure we address all the feedback from the last user testing session.",
-      "I believe we should also focus on improving the user onboarding flow.",
-      "The analytics data shows users are struggling with the initial setup.",
-      "We should consider adding interactive tutorials to help new users.",
-    ];
-
-    let index = 0;
-    const interval = setInterval(() => {
-      if (!this.isTranscribing || index >= mockTranscriptionText.length) {
-        clearInterval(interval);
-        return;
+    try {
+      this.mediaRecorder = new MediaRecorder(this.stream);
+      
+      this.mediaRecorder.addEventListener('dataavailable', (event) => {
+        if (event.data.size > 0) {
+          this.audioChunks.push(event.data);
+        }
+      });
+      
+      this.mediaRecorder.addEventListener('stop', () => {
+        this.uploadAudioToS3();
+      });
+      
+      // Start recording in chunks
+      this.mediaRecorder.start(5000); // 5-second chunks
+      console.log("Audio recording started");
+    } catch (error) {
+      console.error("Error starting audio recording:", error);
+      if (this.onErrorCallback) {
+        this.onErrorCallback(`Error starting audio recording: ${error instanceof Error ? error.message : "Unknown error"}`);
       }
+    }
+  }
+  
+  private handleSpeechResult(event: SpeechRecognitionEvent): void {
+    // Get the most recent result
+    const currentResult = event.results[event.results.length - 1];
+    
+    // If this is a final result (not interim)
+    if (currentResult.isFinal) {
+      const finalTranscript = currentResult[0].transcript;
+      console.log("Final transcript segment:", finalTranscript);
+      
+      // Add to transcript segments
+      this.transcriptSegments.push(finalTranscript);
+      
+      // Output speaker label and transcript
+      if (this.transcriptCallback) {
+        this.transcriptCallback(`Speaker: ${finalTranscript}`);
+      }
+    } else {
+      // For interim results, just log them
+      const interimTranscript = currentResult[0].transcript;
+      console.log("Interim transcript:", interimTranscript);
+    }
+  }
+  
+  private handleSpeechError(event: SpeechRecognitionErrorEvent): void {
+    console.error("Speech recognition error:", event.error, event.message);
+    
+    if (this.onErrorCallback) {
+      this.onErrorCallback(`Speech recognition error: ${event.error}`);
+    }
+    
+    // Restart recognition if it was network-related
+    if (event.error === 'network' && this.isTranscribing) {
+      console.log("Attempting to restart speech recognition after network error");
+      setTimeout(() => {
+        if (this.recognition && this.isTranscribing) {
+          this.recognition.start();
+        }
+      }, 1000);
+    }
+  }
+  
+  private handleSpeechEnd(): void {
+    console.log("Speech recognition ended");
+    
+    // Restart if we're still supposed to be transcribing
+    if (this.isTranscribing && this.recognition) {
+      console.log("Restarting speech recognition");
+      this.recognition.start();
+    }
+  }
+  
+  private async processTranscriptWithGemini(): Promise<void> {
+    // Skip if no transcript or not transcribing
+    if (!this.isTranscribing || this.transcriptSegments.length === 0) {
+      return;
+    }
+    
+    console.log("Processing transcript with Gemini");
+    
+    // Get the last few transcript segments to process
+    const recentTranscript = this.transcriptSegments.slice(-10).join(' ');
+    
+    if (this.geminiApi && this.geminiModel && this.geminiApiKey) {
+      try {
+        // Call Gemini API for insights
+        const prompt = `
+          You are an AI assistant helping with meeting transcription. 
+          Please analyze this recent part of a meeting transcript and extract:
+          1. Key points or topics discussed
+          2. Any action items or follow-ups mentioned
+          
+          Format your response with "Key Points:" and "Action Items:" sections.
+          
+          Transcript:
+          ${recentTranscript}
+        `;
+        
+        const result = await this.geminiModel.generateContent(prompt);
+        const response = await result.response;
+        const insights = response.text();
+        
+        console.log("Gemini insights:", insights);
+        
+        if (this.transcriptCallback) {
+          this.transcriptCallback(`\n---- INSIGHTS ----\n${insights}\n-----------------\n`);
+        }
+        
+        // Upload insights to S3
+        await this.uploadInsightsToS3(insights);
+        
+      } catch (error) {
+        console.error("Error processing with Gemini:", error);
+        if (this.onErrorCallback) {
+          this.onErrorCallback(`Error processing transcript with Gemini: ${error instanceof Error ? error.message : "Unknown error"}`);
+        }
+      }
+    } else {
+      // Mock processing for when Gemini isn't available
+      const mockInsights = this.mockProcessTranscript(recentTranscript);
+      this.uploadInsightsToS3(mockInsights);
+    }
+  }
+  
+  private mockProcessTranscript(transcript: string): string {
+    console.log("Using mock transcript processing");
+    
+    // Simple word-based analysis to identify potential key points and actions
+    const words = transcript.toLowerCase().split(/\s+/);
+    const actionPhrases = ['need to', 'should', 'will', 'must', 'going to', 'plan', 'task'];
+    
+    let hasActionItem = false;
+    for (const phrase of actionPhrases) {
+      if (transcript.toLowerCase().includes(phrase)) {
+        hasActionItem = true;
+        break;
+      }
+    }
+    
+    const mockInsights = `
+Key Points:
+• Discussed recent meeting topics
+• Reviewed project progress
+${words.length > 50 ? '• Covered multiple discussion points in detail' : '• Brief discussion of primary topic'}
+
+${hasActionItem ? `Action Items:
+• Follow up on items mentioned in the transcript
+• Schedule next discussion on these topics` : 'No specific action items identified.'}
+`;
+    
+    if (this.transcriptCallback) {
+      this.transcriptCallback(`\n---- INSIGHTS ----\n${mockInsights}\n-----------------\n`);
+    }
+    
+    return mockInsights;
+  }
+  
+  private async uploadTranscriptToS3(): Promise<void> {
+    if (this.transcriptSegments.length === 0) return;
+    
+    try {
+      const timestamp = new Date().toISOString();
+      const key = `${this.s3KeyPrefix}${this.sessionId}/transcripts/transcript-${timestamp}.json`;
+      
+      // Prepare data to upload
+      const data = {
+        sessionId: this.sessionId,
+        timestamp,
+        transcript: this.transcriptSegments.join(' '),
+        segments: this.transcriptSegments
+      };
+      
+      // Upload to S3
+      const command = new PutObjectCommand({
+        Bucket: this.s3Bucket,
+        Key: key,
+        Body: JSON.stringify(data, null, 2),
+        ContentType: 'application/json',
+      });
+      
+      await this.s3Client.send(command);
+      console.log(`Transcript uploaded to S3: ${this.s3Bucket}/${key}`);
       
       if (this.transcriptCallback) {
-        this.transcriptCallback(mockTranscriptionText[index]);
-      }
-      index++;
-    }, 3000);
-  }
-
-  private async startAwsTranscription(): Promise<void> {
-    try {
-      this.jobName = `meeting-${Date.now()}`;
-      console.log("Preparing for AWS transcription with job name:", this.jobName);
-      
-      // Set up event handler for when recording stops
-      if (this.mediaRecorder) {
-        this.mediaRecorder.addEventListener('stop', this.handleRecordingStop.bind(this));
+        this.transcriptCallback(`(Transcript saved to S3)`);
       }
     } catch (error) {
-      console.error("Error in AWS transcription setup:", error);
+      console.error("Error uploading transcript to S3:", error);
       if (this.onErrorCallback) {
-        this.onErrorCallback(error instanceof Error ? error.message : "Unknown error in transcription setup");
+        this.onErrorCallback(`Error saving transcript: ${error instanceof Error ? error.message : "Unknown error"}`);
       }
-      throw error;
     }
   }
   
-  private async handleRecordingStop(): Promise<void> {
-    if (!this.isTranscribing) return;
+  private async uploadInsightsToS3(insights: string): Promise<void> {
+    try {
+      const timestamp = new Date().toISOString();
+      const key = `${this.s3KeyPrefix}${this.sessionId}/insights/insights-${timestamp}.json`;
+      
+      // Prepare data to upload
+      const data = {
+        sessionId: this.sessionId,
+        timestamp,
+        insights
+      };
+      
+      // Upload to S3
+      const command = new PutObjectCommand({
+        Bucket: this.s3Bucket,
+        Key: key,
+        Body: JSON.stringify(data, null, 2),
+        ContentType: 'application/json',
+      });
+      
+      await this.s3Client.send(command);
+      console.log(`Insights uploaded to S3: ${this.s3Bucket}/${key}`);
+    } catch (error) {
+      console.error("Error uploading insights to S3:", error);
+    }
+  }
+  
+  private async uploadAudioToS3(): Promise<void> {
+    if (this.audioChunks.length === 0) return;
     
     try {
-      console.log("Recording stopped, processing audio chunks:", this.audioChunks.length);
-      
-      if (!this.audioChunks.length) {
-        console.error("No audio chunks recorded");
-        if (this.onErrorCallback) this.onErrorCallback("No audio was recorded.");
-        return;
-      }
-      
-      // Combine audio chunks into a single blob
+      // Combine audio chunks
       const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm' });
-      console.log("Audio blob created with size:", audioBlob.size);
+      const timestamp = new Date().toISOString();
+      const key = `${this.s3KeyPrefix}${this.sessionId}/audio/recording-${timestamp}.webm`;
       
-      if (audioBlob.size > 0) {
-        // Upload to S3
-        const s3Key = `${this.s3KeyPrefix}${this.jobName}.webm`;
-        console.log("Uploading to S3 with key:", s3Key);
-        
-        try {
-          if (this.transcriptCallback) this.transcriptCallback("Uploading audio to S3...");
-          const s3Uri = await this.uploadToS3(audioBlob, s3Key);
-          console.log("S3 upload successful, URI:", s3Uri);
-          if (this.transcriptCallback) this.transcriptCallback(`Audio uploaded to S3: ${this.s3Bucket}`);
-          
-          // Start transcription job
-          await this.startTranscriptionJob(s3Key);
-        } catch (s3Error) {
-          console.error("S3 or transcription error:", s3Error);
-          const errorMessage = s3Error instanceof Error ? s3Error.message : "Error uploading to S3";
-          if (this.transcriptCallback) this.transcriptCallback("Error: Failed to process audio. Check console for details.");
-          if (this.onErrorCallback) this.onErrorCallback(errorMessage);
-        }
-      } else {
-        console.error("No audio recorded (blob size is 0)");
-        if (this.transcriptCallback) this.transcriptCallback("Error: No audio recorded.");
-        if (this.onErrorCallback) this.onErrorCallback("No audio recorded (blob size is 0)");
-      }
-    } catch (error) {
-      console.error("Error processing recording:", error);
-      if (this.transcriptCallback) this.transcriptCallback("Error: Failed to process recording.");
-      if (this.onErrorCallback) {
-        this.onErrorCallback(error instanceof Error ? error.message : "Unknown error processing recording");
-      }
-    }
-  }
-  
-  private async uploadToS3(audioBlob: Blob, key: string): Promise<string> {
-    try {
-      console.log("Converting audio blob to buffer for S3 upload");
+      // Convert blob to buffer
       const arrayBuffer = await audioBlob.arrayBuffer();
       const audioBuffer = new Uint8Array(arrayBuffer);
       
-      console.log("Preparing S3 upload command for bucket:", this.s3Bucket);
+      // Upload to S3
       const command = new PutObjectCommand({
         Bucket: this.s3Bucket,
         Key: key,
@@ -215,212 +369,225 @@ class TranscriptionService {
         ContentType: 'audio/webm',
       });
       
-      console.log("Sending upload command to S3");
       await this.s3Client.send(command);
-      const s3Uri = `s3://${this.s3Bucket}/${key}`;
-      console.log("Audio uploaded to S3:", s3Uri);
-      return s3Uri;
+      console.log(`Audio uploaded to S3: ${this.s3Bucket}/${key}`);
+      
+      // Clear audio chunks after upload
+      this.audioChunks = [];
     } catch (error) {
-      console.error("Error uploading to S3:", error);
+      console.error("Error uploading audio to S3:", error);
       if (this.onErrorCallback) {
-        this.onErrorCallback(`S3 upload failed: ${error instanceof Error ? error.message : "Unknown S3 error"}`);
+        this.onErrorCallback(`Error saving audio: ${error instanceof Error ? error.message : "Unknown error"}`);
       }
-      throw error;
     }
   }
   
-  private async startTranscriptionJob(s3Key: string): Promise<void> {
-    try {
-      const s3Uri = `s3://${this.s3Bucket}/${s3Key}`;
-      console.log("Starting transcription job with S3 URI:", s3Uri);
-      
-      if (!this.transcriptCallback) return;
-      
-      const command = new StartTranscriptionJobCommand({
-        TranscriptionJobName: this.jobName,
-        LanguageCode: "en-US",
-        MediaFormat: "webm",
-        Media: {
-          MediaFileUri: s3Uri
-        },
-        OutputBucketName: this.s3Bucket,
-        OutputKey: `transcripts/${this.jobName}.json`,
-      });
-      
-      console.log("Sending start transcription job command");
-      const response = await this.transcribeClient.send(command);
-      console.log("Transcription job started:", response);
-      if (this.transcriptCallback) this.transcriptCallback("Transcription job started. Processing audio...");
-      
-      // Add immediate diagnostic log that will always appear
-      console.log(`DEBUG: Setting up polling interval for job: ${this.jobName} with 5-second intervals`);
-      if (this.transcriptCallback) this.transcriptCallback("Setting up polling for transcription results...");
-      
-      // Set up polling to check transcription job status
-      this.pollingInterval = window.setInterval(async () => {
-        try {
-          console.log(`DEBUG: Polling for transcription job status: ${this.jobName}`);
-          const status = await this.checkTranscriptionStatus();
-          console.log(`DEBUG: Received status: ${status}`);
-          
-          // If job completed or failed, stop polling
-          if (status === 'COMPLETED' || status === 'FAILED') {
-            console.log(`DEBUG: Job ${this.jobName} status is ${status}, stopping polling`);
-            if (this.pollingInterval) {
-              clearInterval(this.pollingInterval);
-              this.pollingInterval = null;
-            }
-            
-            // For completed jobs, fetch and process the transcript from S3
-            if (status === 'COMPLETED') {
-              console.log(`DEBUG: Job completed, retrieving transcript`);
-              this.retrieveAndProcessTranscript();
-            }
-          }
-        } catch (error) {
-          console.error(`DEBUG: Error in polling interval for job ${this.jobName}:`, error);
-          if (this.transcriptCallback) this.transcriptCallback(`Error checking job status: ${error instanceof Error ? error.message : "Unknown error"}`);
-          if (this.pollingInterval) {
-            clearInterval(this.pollingInterval);
-            this.pollingInterval = null;
-          }
-        }
-      }, 5000); // Check every 5 seconds
-    } catch (error) {
-      console.error("Error starting transcription job:", error);
-      if (this.transcriptCallback) this.transcriptCallback(`Error: Failed to start transcription job: ${error instanceof Error ? error.message : "Unknown error"}`);
-      if (this.onErrorCallback) {
-        this.onErrorCallback(`Failed to start transcription job: ${error instanceof Error ? error.message : "Unknown error"}`);
-      }
-      throw error;
-    }
-  }
-  
-  private async checkTranscriptionStatus(): Promise<string> {
-    try {
-      console.log(`DEBUG: Checking status for job: ${this.jobName}`);
-      
-      const command = new GetTranscriptionJobCommand({
-        TranscriptionJobName: this.jobName,
-      });
-      
-      console.log(`DEBUG: Sending GetTranscriptionJobCommand for job: ${this.jobName}`);
-      const response = await this.transcribeClient.send(command);
-      const status = response.TranscriptionJob?.TranscriptionJobStatus;
-      
-      console.log(`DEBUG: Detailed transcription job status:`, response.TranscriptionJob);
-      
-      if (status === 'COMPLETED' && this.transcriptCallback) {
-        // In a real implementation, you would fetch the transcript from S3
-        // and parse it to extract the text
-        this.transcriptCallback("Transcript completed successfully.");
-      } else if (status === 'FAILED' && this.transcriptCallback) {
-        const reason = response.TranscriptionJob?.FailureReason || "Unknown reason";
-        console.error(`DEBUG: Transcription job failed: ${reason}`);
-        this.transcriptCallback(`Transcription failed: ${reason}`);
-        if (this.onErrorCallback) this.onErrorCallback(`Transcription job failed: ${reason}`);
-      } else if (status && this.transcriptCallback) {
-        this.transcriptCallback(`Transcription status: ${status}`);
-      }
-      
-      return status || 'UNKNOWN';
-    } catch (error) {
-      console.error(`DEBUG: Error checking transcription status for job ${this.jobName}:`, error);
-      
-      // We need to check for specific AWS error types
-      if (error instanceof Error) {
-        // Check for access denied errors
-        if (error.name === 'AccessDeniedException' || error.message.includes('Access Denied')) {
-          console.error(`DEBUG: Access denied error for Transcribe`);
-          if (this.transcriptCallback) this.transcriptCallback("Error: Access denied for AWS Transcribe. Check IAM permissions.");
-        }
-        
-        // Check for resource not found errors (which could mean the job doesn't exist)
-        if (error.name === 'ResourceNotFoundException' || error.message.includes('not found')) {
-          console.error(`DEBUG: Resource not found (job may not exist)`);
-          if (this.transcriptCallback) this.transcriptCallback("Error: Transcription job not found. It may have been deleted or never created.");
-        }
-      }
-      
-      if (this.onErrorCallback) {
-        this.onErrorCallback(`Error checking transcription status: ${error instanceof Error ? error.message : "Unknown error"}`);
-      }
-      throw error;
-    }
-  }
-  
-  // New method to retrieve and process the transcript from S3
-  private async retrieveAndProcessTranscript(): Promise<void> {
-    try {
-      const transcriptKey = `transcripts/${this.jobName}.json`;
-      console.log(`DEBUG: Attempting to retrieve transcript from S3: ${this.s3Bucket}/${transcriptKey}`);
-      
-      if (this.transcriptCallback) {
-        this.transcriptCallback("Retrieving transcript from S3...");
-        
-        try {
-          // Directly display to UI that we would access S3 in a real implementation
-          console.log(`DEBUG: In a production app, would retrieve from s3://${this.s3Bucket}/${transcriptKey}`);
-          this.transcriptCallback(`Transcript location: s3://${this.s3Bucket}/${transcriptKey}`);
-          
-          // For demonstration purposes, adding simulated transcript
-          // In a real implementation, you would fetch the JSON from S3 and parse it
-          // This is a temporary solution until we fully implement S3 retrieval
-          this.transcriptCallback("Transcript retrieved successfully:");
-          this.transcriptCallback("Speaker 1: Thank you for joining the meeting today.");
-          this.transcriptCallback("Speaker 2: We'll be discussing the project timeline and deliverables.");
-          this.transcriptCallback("Speaker 1: Let's start with updates from the development team.");
-          this.transcriptCallback("Speaker 2: We've completed the core functionality and are now working on UI improvements.");
-          this.transcriptCallback("Speaker 1: The QA team will begin testing next week.");
-        } catch (innerError) {
-          console.error(`DEBUG: Error in simulated transcript display:`, innerError);
-          this.transcriptCallback("Error displaying transcript content.");
-        }
-      }
-    } catch (error) {
-      console.error(`DEBUG: Error retrieving transcript from S3 for job ${this.jobName}:`, error);
-      if (this.transcriptCallback) {
-        this.transcriptCallback(`Error: Failed to retrieve transcript from S3: ${error instanceof Error ? error.message : "Unknown error"}`);
-      }
-      if (this.onErrorCallback) {
-        this.onErrorCallback(`Failed to retrieve transcript: ${error instanceof Error ? error.message : "Unknown error"}`);
-      }
-    }
-  }
-
-  stopTranscription(): void {
+  async stopTranscription(): Promise<void> {
     console.log("Stopping transcription service");
     this.isTranscribing = false;
     
+    // Stop speech recognition
+    if (this.recognition) {
+      try {
+        this.recognition.stop();
+      } catch (error) {
+        console.error("Error stopping speech recognition:", error);
+      }
+      this.recognition = null;
+    }
+    
+    // Stop media recorder
     if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
-      console.log("Stopping media recorder");
-      this.mediaRecorder.stop();
+      try {
+        this.mediaRecorder.stop();
+      } catch (error) {
+        console.error("Error stopping media recorder:", error);
+      }
     }
     
+    // Stop audio tracks
     if (this.stream) {
-      console.log("Stopping audio tracks");
       this.stream.getTracks().forEach(track => track.stop());
+      this.stream = null;
     }
     
-    if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-      console.log("Closing WebSocket connection");
-      this.socket.close();
+    // Final processing and uploads
+    await this.processTranscriptWithGemini();
+    await this.uploadTranscriptToS3();
+    
+    // Upload final audio if needed
+    if (this.audioChunks.length > 0) {
+      await this.uploadAudioToS3();
     }
     
-    if (this.pollingInterval) {
-      console.log("Clearing polling interval");
-      clearInterval(this.pollingInterval);
-      this.pollingInterval = null;
+    // Clear intervals
+    if (this.processingInterval) {
+      clearInterval(this.processingInterval);
+      this.processingInterval = null;
     }
     
-    this.mediaRecorder = null;
-    this.stream = null;
-    this.socket = null;
-    this.audioChunks = [];
-    this.onErrorCallback = null;
+    if (this.uploadInterval) {
+      clearInterval(this.uploadInterval);
+      this.uploadInterval = null;
+    }
+    
+    // Generate and display final summary
+    if (this.transcriptCallback && this.transcriptSegments.length > 0) {
+      const fullText = this.transcriptSegments.join(' ');
+      this.transcriptCallback(`\n==== MEETING ENDED ====\nFull transcript saved to S3\n====================\n`);
+      
+      // Create final meeting summary file
+      await this.createFinalSummary(fullText);
+    }
+    
     this.transcriptCallback = null;
+    this.onErrorCallback = null;
     console.log("Transcription service stopped");
+  }
+  
+  private async createFinalSummary(fullTranscript: string): Promise<void> {
+    try {
+      // Generate final summary with Gemini or mock
+      let summary = "Meeting summary not available.";
+      
+      if (this.geminiApi && this.geminiModel && this.geminiApiKey) {
+        try {
+          const prompt = `
+            You are an AI assistant creating meeting summaries.
+            Please analyze this complete meeting transcript and provide:
+            1. A concise summary of the key points (3-5 bullet points)
+            2. All action items identified, with assigned people if mentioned
+            3. Any decisions made during the meeting
+            
+            Format your response in markdown with sections for "Summary", "Action Items", and "Decisions".
+            
+            Meeting Transcript:
+            ${fullTranscript}
+          `;
+          
+          const result = await this.geminiModel.generateContent(prompt);
+          const response = await result.response;
+          summary = response.text();
+        } catch (error) {
+          console.error("Error generating final summary:", error);
+          summary = "Error generating meeting summary. See transcript for details.";
+        }
+      } else {
+        summary = "Meeting ended. Summary not available without Gemini API.";
+      }
+      
+      // Upload final summary to S3
+      const key = `${this.s3KeyPrefix}${this.sessionId}/summary.json`;
+      
+      const data = {
+        sessionId: this.sessionId,
+        timestamp: new Date().toISOString(),
+        summary,
+        fullTranscript
+      };
+      
+      const command = new PutObjectCommand({
+        Bucket: this.s3Bucket,
+        Key: key,
+        Body: JSON.stringify(data, null, 2),
+        ContentType: 'application/json',
+      });
+      
+      await this.s3Client.send(command);
+      console.log(`Final summary uploaded to S3: ${this.s3Bucket}/${key}`);
+      
+      // Create index file with metadata about the meeting
+      await this.createMeetingIndex(summary);
+      
+    } catch (error) {
+      console.error("Error creating final summary:", error);
+    }
+  }
+  
+  private async createMeetingIndex(summary: string): Promise<void> {
+    try {
+      // Create an index file containing metadata about this meeting session
+      const key = `${this.s3KeyPrefix}${this.sessionId}/index.json`;
+      
+      const data = {
+        sessionId: this.sessionId,
+        startTime: this.sessionId.split('-')[1], // Extract timestamp from session ID
+        endTime: Date.now(),
+        segmentsCount: this.transcriptSegments.length,
+        summary: summary.substring(0, 500) + (summary.length > 500 ? '...' : ''),
+        paths: {
+          audio: `${this.s3KeyPrefix}${this.sessionId}/audio/`,
+          transcripts: `${this.s3KeyPrefix}${this.sessionId}/transcripts/`,
+          insights: `${this.s3KeyPrefix}${this.sessionId}/insights/`,
+          summary: `${this.s3KeyPrefix}${this.sessionId}/summary.json`
+        }
+      };
+      
+      const command = new PutObjectCommand({
+        Bucket: this.s3Bucket,
+        Key: key,
+        Body: JSON.stringify(data, null, 2),
+        ContentType: 'application/json',
+      });
+      
+      await this.s3Client.send(command);
+      console.log(`Meeting index uploaded to S3: ${this.s3Bucket}/${key}`);
+      
+    } catch (error) {
+      console.error("Error creating meeting index:", error);
+    }
+  }
+  
+  async getMeetingSummary(sessionId: string): Promise<any> {
+    try {
+      const key = `${this.s3KeyPrefix}${sessionId}/summary.json`;
+      
+      const command = new GetObjectCommand({
+        Bucket: this.s3Bucket,
+        Key: key
+      });
+      
+      const response = await this.s3Client.send(command);
+      
+      if (response.Body) {
+        const summaryData = await this.streamToString(response.Body);
+        return JSON.parse(summaryData);
+      }
+      
+      throw new Error("No summary found");
+    } catch (error) {
+      console.error("Error retrieving meeting summary:", error);
+      throw error;
+    }
+  }
+  
+  async listMeetings(): Promise<any[]> {
+    try {
+      // This would require AWS SDK's ListObjectsV2Command
+      // For simplicity, we're simulating it here
+      console.warn("listMeetings: This method would normally use ListObjectsV2Command");
+      
+      return [{
+        sessionId: this.sessionId,
+        date: new Date().toISOString(),
+        summary: "Most recent meeting (actual listing not implemented)"
+      }];
+    } catch (error) {
+      console.error("Error listing meetings:", error);
+      return [];
+    }
+  }
+  
+  // Helper function to convert stream to string
+  private async streamToString(stream: any): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      stream.on('data', (chunk: Buffer) => chunks.push(chunk));
+      stream.on('error', reject);
+      stream.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    });
   }
 }
 
 export default new TranscriptionService();
+
