@@ -44,7 +44,7 @@ $ npm install
 
 
 
-**Start Dev Server**
+##Start Dev server
 
 $ npm run dev
 
