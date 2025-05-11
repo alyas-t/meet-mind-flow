@@ -33,7 +33,7 @@ const Index = () => {
           <div className="relative">
             <div className="absolute -inset-1 bg-gradient-to-r from-app-blue to-blue-400 rounded-xl blur-xl opacity-30"></div>
             <img 
-              src="/placeholder.svg" 
+              src="/meeting.jpg" 
               alt="Meeting Assistant Interface" 
               className="relative rounded-xl shadow-lg border border-gray-200 bg-white"
               width={600}
