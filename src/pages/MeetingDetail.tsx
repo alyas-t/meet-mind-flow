@@ -23,8 +23,17 @@ const mockMeetingsData = {
       "We should allocate more resources to testing before the next release.",
       "Let's make sure we address all the feedback from the last user testing session."
     ],
-    keyPoints: 4,
-    actionItems: 3,
+    keyPoints: [
+      "Made good progress on first milestone",
+      "Should prioritize UI improvements",
+      "Allocate more resources to testing",
+      "Address feedback from last user testing"
+    ],
+    actionItems: [
+      "Review UI improvement proposals",
+      "Schedule additional testing sessions",
+      "Compile user feedback report"
+    ],
   },
   '2': {
     id: '2',
@@ -39,8 +48,20 @@ const mockMeetingsData = {
       "We should start with user research as soon as possible.",
       "Budget has been approved for additional resources.",
     ],
-    keyPoints: 7,
-    actionItems: 5,
+    keyPoints: [
+      "Finalize Q3 roadmap",
+      "Marketing launch target: August",
+      "Development needs 6 weeks for implementation",
+      "Start user research ASAP",
+      "Budget approved for additional resources"
+    ],
+    actionItems: [
+      "Create detailed Q3 roadmap document",
+      "Schedule user research sessions",
+      "Allocate approved resources to teams",
+      "Set up weekly progress tracking",
+      "Coordinate with marketing on launch timeline"
+    ],
   },
 };
 
@@ -68,7 +89,12 @@ const MeetingDetail = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 h-[calc(100vh-300px)]">
         <TranscriptPanel transcript={meeting.transcript} autoScroll={false} />
-        <KeyPointsPanel transcript={meeting.transcript} />
+        <KeyPointsPanel 
+          keyPoints={meeting.keyPoints} 
+          actionItems={meeting.actionItems} 
+          isLoading={false} 
+          error="" 
+        />
       </div>
 
       <div className="mt-6 flex justify-end gap-4">
