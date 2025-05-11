@@ -1,4 +1,5 @@
 
+import React from 'react';
 import { toast } from "@/components/ui/sonner";
 import { Download, Share2 } from "lucide-react";
 
