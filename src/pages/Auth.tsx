@@ -13,6 +13,8 @@ import { useForm } from 'react-hook-form';
 import { Mic } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
+import { Separator } from '@/components/ui/separator';
 
 // Form validation schemas
 const loginSchema = z.object({
@@ -29,6 +31,7 @@ const signupSchema = z.object({
 const Auth = () => {
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
+  const { signInWithGoogle } = useAuth();
 
   // Create forms
   const loginForm = useForm<z.infer<typeof loginSchema>>({
@@ -94,6 +97,11 @@ const Auth = () => {
     }
   };
 
+  // Handle Google sign in
+  const handleGoogleSignIn = async () => {
+    await signInWithGoogle();
+  };
+
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 px-4">
       <div className="mb-8 flex items-center gap-2">
@@ -117,6 +125,29 @@ const Auth = () => {
               Your AI-powered meeting assistant
             </CardDescription>
           </CardHeader>
+          
+          {/* Google Sign-In Button - Show on both tabs */}
+          <div className="px-6 mb-4">
+            <Button 
+              variant="outline" 
+              className="w-full flex items-center justify-center gap-2"
+              onClick={handleGoogleSignIn}
+              type="button"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512" className="w-4 h-4">
+                <path d="M488 261.8C488 403.3 391.1 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h236.1c2.3 12.7 3.9 24.9 3.9 41.4z" fill="#4285f4"/>
+              </svg>
+              Continue with Google
+            </Button>
+          </div>
+
+          <div className="px-6 mb-4">
+            <div className="flex items-center gap-3">
+              <Separator className="flex-1" />
+              <span className="text-xs text-gray-500">OR</span>
+              <Separator className="flex-1" />
+            </div>
+          </div>
           
           <CardContent>
             <TabsContent value="login">
