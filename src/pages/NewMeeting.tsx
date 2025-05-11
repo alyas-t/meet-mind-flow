@@ -1,5 +1,4 @@
 
-// src/pages/NewMeeting.tsx
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,6 +14,7 @@ import TranscriptionService from '@/services/aws/transcriptionService';
 import SummaryService from '@/services/aws/summaryService';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { Json } from '@/integrations/supabase/types';
 
 // Use your actual Gemini API key
 const GEMINI_API_KEY = 'AIzaSyDzU4-SU9RyoXCg7jDfWa6GKAH-S8zU1hY';
@@ -151,6 +151,12 @@ const NewMeeting = () => {
         throw new Error("You must be logged in to save a meeting");
       }
       
+      // Convert transcript to JSON-compatible format
+      // This step ensures the transcript array is properly serialized for Supabase
+      const transcriptJson = transcript as unknown as Json;
+      const keyPointsJson = keyPoints as unknown as Json;
+      const actionItemsJson = actionItems as unknown as Json;
+      
       // Save to Supabase
       const { data, error } = await supabase
         .from('meetings')
@@ -158,9 +164,9 @@ const NewMeeting = () => {
           title: meetingTitle || 'Untitled Meeting',
           user_id: user.id,
           date: new Date().toISOString(),
-          transcript: transcript,
-          key_points: keyPoints,
-          action_items: actionItems,
+          transcript: transcriptJson,
+          key_points: keyPointsJson,
+          action_items: actionItemsJson,
           duration: transcript.length > 0 ? `${Math.round(transcript.length / 8)} min` : null
         })
         .select()
