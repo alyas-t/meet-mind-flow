@@ -1,4 +1,4 @@
-
+// src/pages/NewMeeting.tsx
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,14 +10,27 @@ import KeyPointsPanel from '@/components/meeting/KeyPointsPanel';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { getAwsConfig, isAwsConfigured } from '@/services/aws/config';
+import TranscriptionService from '@/services/aws/transcriptionService';
+import SummaryService from '@/services/aws/summaryService';
+
+// Use your actual Gemini API key
+const GEMINI_API_KEY = 'AIzaSyDzU4-SU9RyoXCg7jDfWa6GKAH-S8zU1hY';
 
 const NewMeeting = () => {
   const [meetingTitle, setMeetingTitle] = useState<string>('Untitled Meeting');
   const [transcript, setTranscript] = useState<string[]>([]);
+  const [keyPoints, setKeyPoints] = useState<string[]>([]);
+  const [actionItems, setActionItems] = useState<string[]>([]);
+  const [isRecording, setIsRecording] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
   const [awsConfigured, setAwsConfigured] = useState<boolean>(false);
   const [s3Configured, setS3Configured] = useState<boolean>(false);
   const navigate = useNavigate();
+  
+  const transcriptionService = React.useMemo(() => new TranscriptionService(), []);
+  const summaryService = React.useMemo(() => new SummaryService(GEMINI_API_KEY), []);
   
   useEffect(() => {
     // Check if AWS is properly configured
@@ -37,10 +50,74 @@ const NewMeeting = () => {
         duration: 8000,
       });
     }
-  }, []);
+    
+    // Set up callbacks for transcription updates
+    transcriptionService.onUpdate((newTranscript) => {
+      setTranscript(prev => [...prev, newTranscript]);
+    });
+    
+    transcriptionService.onRecordingStatus((status) => {
+      setIsRecording(status);
+    });
+    
+    // Handle completed transcripts
+    transcriptionService.onComplete(async (fullTranscript) => {
+      try {
+        setIsLoading(true);
+        console.log('Transcript complete, generating key points...');
+        
+        // Validate transcript
+        if (!fullTranscript || fullTranscript.trim() === '') {
+          setError('The transcript is empty. No content to analyze.');
+          setIsLoading(false);
+          return;
+        }
+        
+        // Process with Gemini
+        const summary = await summaryService.generateKeyPoints(fullTranscript);
+        
+        // Update state with results
+        setKeyPoints(summary.keyPoints || []);
+        setActionItems(summary.actionItems || []);
+        
+        toast.success("Analysis complete", {
+          description: "Meeting insights have been generated"
+        });
+        
+      } catch (err: any) {
+        console.error('Error processing transcript:', err);
+        setError('Failed to generate meeting insights: ' + err.message);
+        
+        toast.error("Error analyzing meeting", {
+          description: err.message
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    });
+    
+    return () => {
+      // Clean up if needed
+      if (transcriptionService.isRecording) {
+        transcriptionService.stopRecording();
+      }
+    };
+  }, [transcriptionService, summaryService]);
   
   const handleTranscriptUpdate = (text: string) => {
-    setTranscript(prev => [...prev, text]);
+    // This function is kept for compatibility with your existing components
+  };
+  
+  const handleStartRecording = () => {
+    setError(null);
+    setTranscript([]);
+    setKeyPoints([]);
+    setActionItems([]);
+    transcriptionService.startRecording();
+  };
+  
+  const handleStopRecording = () => {
+    transcriptionService.stopRecording();
   };
   
   const handleSaveMeeting = async () => {
@@ -69,11 +146,9 @@ const NewMeeting = () => {
   return (
     <PageLayout className="py-6" showAwsNotice={!awsConfigured || !s3Configured}>
       <div className="mb-6">
-        <Input
-          value={meetingTitle}
-          onChange={(e) => setMeetingTitle(e.target.value)}
-          className="text-2xl font-bold border-none h-auto p-0 text-app-blue focus-visible:ring-0"
-        />
+        <div className="text-app-blue text-2xl font-bold">
+          {meetingTitle}
+        </div>
         <p className="text-gray-500">{new Date().toLocaleString()}</p>
       </div>
       
@@ -84,22 +159,39 @@ const NewMeeting = () => {
         </div>
       )}
       
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className="p-4 md:col-span-1 bg-gray-50">
-          <AudioRecorder onTranscriptUpdate={handleTranscriptUpdate} />
-        </Card>
+      <div className="grid grid-cols-12 gap-6">
+        {/* Left panel - Recording controls */}
+        <div className="col-span-12 sm:col-span-3">
+          <Card className="p-4 bg-gray-50">
+            <AudioRecorder 
+              isRecording={isRecording}
+              onStartRecording={handleStartRecording}
+              onStopRecording={handleStopRecording}
+              onTranscriptUpdate={handleTranscriptUpdate}
+            />
+          </Card>
+        </div>
         
-        <div className="md:col-span-2 grid grid-cols-1 lg:grid-cols-2 gap-6 h-[calc(100vh-300px)]">
+        {/* Center and Right panels - Transcript and Insights */}
+        <div className="col-span-12 sm:col-span-9 grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Transcript Panel */}
           <TranscriptPanel transcript={transcript} />
-          <KeyPointsPanel transcript={transcript} />
+          
+          {/* Key Points Panel */}
+          <KeyPointsPanel 
+            keyPoints={keyPoints}
+            actionItems={actionItems}
+            isLoading={isLoading}
+            error={error}
+            transcript={transcript} // For backward compatibility
+          />
         </div>
       </div>
 
       <div className="mt-6 flex justify-end">
         <Button 
           disabled={transcript.length === 0 || isSaving}
-          variant="outline"
-          className="mr-4"
+          className="bg-app-blue hover:bg-app-blue/90"
           onClick={handleSaveMeeting}
         >
           {isSaving ? "Saving..." : "Save & Exit"}
