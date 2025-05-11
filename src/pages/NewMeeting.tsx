@@ -19,9 +19,14 @@ import { useAuth } from '@/contexts/AuthContext';
 // Use your actual Gemini API key
 const GEMINI_API_KEY = 'AIzaSyDzU4-SU9RyoXCg7jDfWa6GKAH-S8zU1hY';
 
+interface TranscriptEntry {
+  text: string;
+  speaker?: string;
+}
+
 const NewMeeting = () => {
   const [meetingTitle, setMeetingTitle] = useState<string>('Untitled Meeting');
-  const [transcript, setTranscript] = useState<string[]>([]);
+  const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
   const [keyPoints, setKeyPoints] = useState<string[]>([]);
   const [actionItems, setActionItems] = useState<string[]>([]);
   const [isRecording, setIsRecording] = useState<boolean>(false);
@@ -30,6 +35,7 @@ const NewMeeting = () => {
   const [error, setError] = useState<string | null>(null);
   const [awsConfigured, setAwsConfigured] = useState<boolean>(false);
   const [s3Configured, setS3Configured] = useState<boolean>(false);
+  const [currentSpeaker, setCurrentSpeaker] = useState<string>("You");
   const navigate = useNavigate();
   const { user } = useAuth();
   
@@ -71,14 +77,19 @@ const NewMeeting = () => {
         console.log('Transcript complete, generating key points...');
         
         // Validate transcript
-        if (!fullTranscript || fullTranscript.trim() === '') {
+        if (fullTranscript.length === 0) {
           setError('The transcript is empty. No content to analyze.');
           setIsLoading(false);
           return;
         }
         
+        // Convert transcript entries to string format for summary service
+        const transcriptText = fullTranscript
+          .map(entry => entry.speaker ? `${entry.speaker}: ${entry.text}` : entry.text)
+          .join('\n');
+        
         // Process with Gemini
-        const summary = await summaryService.generateKeyPoints(fullTranscript);
+        const summary = await summaryService.generateKeyPoints(transcriptText);
         
         // Update state with results
         setKeyPoints(summary.keyPoints || []);
@@ -102,14 +113,16 @@ const NewMeeting = () => {
     
     return () => {
       // Clean up if needed
-      if (transcriptionService.isRecording) {
+      if (transcriptionService.isRecording()) {
         transcriptionService.stopRecording();
       }
     };
   }, [transcriptionService, summaryService]);
   
-  const handleTranscriptUpdate = (text: string) => {
-    // This function is kept for compatibility with your existing components
+  const handleSelectSpeaker = (speaker: string) => {
+    setCurrentSpeaker(speaker);
+    transcriptionService.setSpeaker(speaker);
+    toast.info(`Speaker changed to ${speaker}`);
   };
   
   const handleStartRecording = () => {
@@ -117,6 +130,7 @@ const NewMeeting = () => {
     setTranscript([]);
     setKeyPoints([]);
     setActionItems([]);
+    transcriptionService.setSpeaker(currentSpeaker);
     transcriptionService.startRecording();
   };
   
@@ -226,6 +240,8 @@ const NewMeeting = () => {
               isRecording={isRecording}
               onStartRecording={handleStartRecording}
               onStopRecording={handleStopRecording}
+              onSelectSpeaker={handleSelectSpeaker}
+              currentSpeaker={currentSpeaker}
             />
           </Card>
         </div>

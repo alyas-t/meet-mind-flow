@@ -10,12 +10,17 @@ import { supabase } from '@/integrations/supabase/client';
 import { downloadAsFile, shareContent } from '@/utils/exportUtils';
 import { Download, Share2 } from 'lucide-react';
 
+interface TranscriptEntry {
+  text: string;
+  speaker?: string;
+}
+
 interface Meeting {
   id: string;
   title: string;
   date: string;
   duration?: string;
-  transcript: string[];
+  transcript: TranscriptEntry[] | string[];
   key_points: string[];
   action_items: string[];
 }
@@ -67,7 +72,7 @@ const MeetingDetail = () => {
             ...data,
             key_points: data.key_points as string[] || [],
             action_items: data.action_items as string[] || [],
-            transcript: data.transcript as string[] || []
+            transcript: data.transcript as TranscriptEntry[] | string[] || []
           });
         }
       } catch (error) {
@@ -114,8 +119,24 @@ const MeetingDetail = () => {
     // Create header with meeting details
     const header = `Meeting: ${meeting.title}\nDate: ${formattedDate}\n${meeting.duration ? `Duration: ${meeting.duration}\n` : ''}\n\n`;
     
-    // Combine header with transcript lines
-    const content = header + meeting.transcript.join('\n');
+    // Format transcript based on its structure
+    let transcriptText: string;
+    
+    if (Array.isArray(meeting.transcript)) {
+      // Handle both string[] and TranscriptEntry[]
+      transcriptText = meeting.transcript.map(entry => {
+        if (typeof entry === 'string') {
+          return entry;
+        } else {
+          return entry.speaker ? `${entry.speaker}: ${entry.text}` : entry.text;
+        }
+      }).join('\n');
+    } else {
+      transcriptText = "No transcript available";
+    }
+    
+    // Combine header with transcript text
+    const content = header + transcriptText;
     
     // Download the transcript
     downloadAsFile(content, fileName);

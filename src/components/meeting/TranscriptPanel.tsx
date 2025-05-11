@@ -1,19 +1,24 @@
 import React, { useRef, useEffect } from 'react';
 
 interface TranscriptPanelProps {
-  transcript: string[];
+  transcript: string[] | Array<{text: string, speaker?: string}>;
   autoScroll?: boolean;
 }
 
 const TranscriptPanel: React.FC<TranscriptPanelProps> = ({ transcript, autoScroll = true }) => {
   const transcriptEndRef = useRef<HTMLDivElement>(null);
   
+  // Convert transcript to standard format
+  const normalizedTranscript = transcript.map(entry => 
+    typeof entry === 'string' ? { text: entry } : entry
+  );
+  
   // Filter out duplicate messages (especially AWS Configuration messages)
-  const filteredTranscript = transcript.reduce((acc: string[], current: string) => {
+  const filteredTranscript = normalizedTranscript.reduce((acc: Array<{text: string, speaker?: string}>, current) => {
     // For AWS Configuration and S3 Bucket messages, only keep the first occurrence
     if (
-      (current.startsWith("AWS Configuration:") || current.startsWith("S3 Bucket:")) && 
-      acc.some(item => item === current)
+      (current.text.startsWith("AWS Configuration:") || current.text.startsWith("S3 Bucket:")) && 
+      acc.some(item => item.text === current.text)
     ) {
       return acc;
     }
@@ -38,18 +43,23 @@ const TranscriptPanel: React.FC<TranscriptPanelProps> = ({ transcript, autoScrol
     <div className="bg-white rounded-lg border h-full overflow-y-auto p-6">
       <h3 className="text-xl font-medium mb-4 pb-2 border-b sticky top-0 bg-white">Transcript</h3>
       <div className="space-y-4">
-        {filteredTranscript.map((text, index) => (
-          <div key={index} className={`animate-fade-in ${text.startsWith("Error:") ? "text-red-500" : ""}`}>
-            {text.startsWith("Transcription status:") || text.startsWith("Uploading") || text.startsWith("Audio uploaded") ? (
-              <p className="text-blue-600 font-medium">{text}</p>
-            ) : text.startsWith("Starting") || text.includes("job started") ? (
-              <p className="text-green-600">{text}</p>
-            ) : text.startsWith("AWS Configuration:") ? (
-              <p className="text-purple-600">{text}</p>
-            ) : text.startsWith("S3 Bucket:") ? (
-              <p className="text-orange-600 font-medium">{text}</p>
+        {filteredTranscript.map((entry, index) => (
+          <div key={index} className={`animate-fade-in ${entry.text.startsWith("Error:") ? "text-red-500" : ""}`}>
+            {entry.text.startsWith("Transcription status:") || entry.text.startsWith("Uploading") || entry.text.startsWith("Audio uploaded") ? (
+              <p className="text-blue-600 font-medium">{entry.text}</p>
+            ) : entry.text.startsWith("Starting") || entry.text.includes("job started") ? (
+              <p className="text-green-600">{entry.text}</p>
+            ) : entry.text.startsWith("AWS Configuration:") ? (
+              <p className="text-purple-600">{entry.text}</p>
+            ) : entry.text.startsWith("S3 Bucket:") ? (
+              <p className="text-orange-600 font-medium">{entry.text}</p>
             ) : (
-              <p className="text-gray-800">{text}</p>
+              <div className="text-gray-800">
+                {entry.speaker && (
+                  <span className="font-semibold text-app-blue mr-2">{entry.speaker}:</span>
+                )}
+                <span>{entry.text}</span>
+              </div>
             )}
           </div>
         ))}

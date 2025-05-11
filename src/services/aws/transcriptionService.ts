@@ -5,17 +5,23 @@ interface AwsConfig {
   bucketName: string;
 }
 
+interface TranscriptEntry {
+  text: string;
+  speaker?: string;
+}
+
 class TranscriptionService {
   private _isRecording: boolean = false;
-  private transcript: string[] = [];
-  private onTranscriptUpdate: ((message: string) => void) | null = null;
+  private transcript: TranscriptEntry[] = [];
+  private onTranscriptUpdate: ((message: TranscriptEntry) => void) | null = null;
   private onRecordingStatusChange: ((status: boolean) => void) | null = null;
-  private onTranscriptComplete: ((transcript: string) => void) | null = null;
+  private onTranscriptComplete: ((transcript: TranscriptEntry[]) => void) | null = null;
   private awsConfig: AwsConfig = {
     region: 'us-west-2',
     bucketName: 'mindscribe'
   };
   private recognition: SpeechRecognition | null = null;
+  private currentSpeaker: string | undefined = undefined;
 
   init(): void {
     if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
@@ -30,12 +36,16 @@ class TranscriptionService {
 
     this.recognition.onresult = (event) => {
       const result = event.results[event.results.length - 1];
-      const transcript = result[0].transcript;
-      const formattedTranscript = `Speaker: ${transcript}`;
-      this.transcript.push(formattedTranscript);
+      const transcriptText = result[0].transcript;
+      const transcriptEntry: TranscriptEntry = {
+        text: transcriptText,
+        speaker: this.currentSpeaker
+      };
+      
+      this.transcript.push(transcriptEntry);
       
       if (this.onTranscriptUpdate) {
-        this.onTranscriptUpdate(formattedTranscript);
+        this.onTranscriptUpdate(transcriptEntry);
       }
     };
 
@@ -43,7 +53,9 @@ class TranscriptionService {
       console.error('Speech recognition error:', event.error);
       if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
         if (this.onTranscriptUpdate) {
-          this.onTranscriptUpdate('Error: Microphone access denied. Please check your permissions.');
+          this.onTranscriptUpdate({
+            text: 'Error: Microphone access denied. Please check your permissions.'
+          });
         }
       }
     };
@@ -58,12 +70,22 @@ class TranscriptionService {
     // Log AWS configuration
     const configMessage = `AWS Configuration: Using region ${this.awsConfig.region}\n\nS3 Bucket: ${this.awsConfig.bucketName}`;
     if (this.onTranscriptUpdate) {
-      this.onTranscriptUpdate(configMessage);
+      this.onTranscriptUpdate({
+        text: configMessage
+      });
     }
   }
 
   isRecording(): boolean {
     return this._isRecording;
+  }
+
+  setSpeaker(speaker: string): void {
+    this.currentSpeaker = speaker;
+  }
+
+  getCurrentSpeaker(): string | undefined {
+    return this.currentSpeaker;
   }
 
   startRecording(): boolean {
@@ -72,7 +94,9 @@ class TranscriptionService {
         this.init();
       } catch (error: any) {
         if (this.onTranscriptUpdate) {
-          this.onTranscriptUpdate(`Error: ${error.message}`);
+          this.onTranscriptUpdate({
+            text: `Error: ${error.message}`
+          });
         }
         return false;
       }
@@ -84,7 +108,9 @@ class TranscriptionService {
     try {
       this.recognition!.start();
       if (this.onTranscriptUpdate) {
-        this.onTranscriptUpdate('Starting audio recording...');
+        this.onTranscriptUpdate({
+          text: 'Starting audio recording...'
+        });
       }
       
       if (this.onRecordingStatusChange) {
@@ -95,7 +121,9 @@ class TranscriptionService {
     } catch (error: any) {
       console.error('Error starting recording:', error);
       if (this.onTranscriptUpdate) {
-        this.onTranscriptUpdate(`Error starting recording: ${error.message}`);
+        this.onTranscriptUpdate({
+          text: `Error starting recording: ${error.message}`
+        });
       }
       
       this._isRecording = false;
@@ -107,7 +135,7 @@ class TranscriptionService {
     }
   }
 
-  stopRecording(): string | null {
+  stopRecording(): TranscriptEntry[] | null {
     if (this.recognition && this._isRecording) {
       this.recognition.stop();
       this._isRecording = false;
@@ -117,25 +145,28 @@ class TranscriptionService {
       }
       
       if (this.onTranscriptUpdate) {
-        this.onTranscriptUpdate('Recording stopped. Processing audio...');
-        this.onTranscriptUpdate('==== MEETING ENDED ====');
-        this.onTranscriptUpdate('Transcript generation complete.');
+        this.onTranscriptUpdate({
+          text: 'Recording stopped. Processing audio...'
+        });
+        this.onTranscriptUpdate({
+          text: '==== MEETING ENDED ===='
+        });
+        this.onTranscriptUpdate({
+          text: 'Transcript generation complete.'
+        });
       }
-      
-      // Make sure to finalize the transcript
-      const fullTranscript = this.transcript.join('\n');
       
       // Signal that recording has stopped and pass the complete transcript
       if (this.onTranscriptComplete) {
-        this.onTranscriptComplete(fullTranscript);
+        this.onTranscriptComplete(this.transcript);
       }
       
-      return fullTranscript;
+      return this.transcript;
     }
     return null;
   }
 
-  onUpdate(callback: (message: string) => void): void {
+  onUpdate(callback: (message: TranscriptEntry) => void): void {
     this.onTranscriptUpdate = callback;
   }
 
@@ -143,7 +174,7 @@ class TranscriptionService {
     this.onRecordingStatusChange = callback;
   }
   
-  onComplete(callback: (transcript: string) => void): void {
+  onComplete(callback: (transcript: TranscriptEntry[]) => void): void {
     this.onTranscriptComplete = callback;
   }
 }
