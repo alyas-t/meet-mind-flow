@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -7,6 +6,8 @@ import TranscriptPanel from '@/components/meeting/TranscriptPanel';
 import KeyPointsPanel from '@/components/meeting/KeyPointsPanel';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
+import { downloadAsFile } from '@/utils/exportUtils';
+import { Download } from 'lucide-react';
 
 interface Meeting {
   id: string;
@@ -103,6 +104,22 @@ const MeetingDetail = () => {
     );
   }
 
+  const handleDownloadTranscript = () => {
+    if (!meeting) return;
+    
+    const fileName = `${meeting.title.replace(/\s+/g, '_')}_transcript.txt`;
+    const formattedDate = new Date(meeting.date).toLocaleDateString();
+    
+    // Create header with meeting details
+    const header = `Meeting: ${meeting.title}\nDate: ${formattedDate}\n${meeting.duration ? `Duration: ${meeting.duration}\n` : ''}\n\n`;
+    
+    // Combine header with transcript lines
+    const content = header + meeting.transcript.join('\n');
+    
+    // Download the transcript
+    downloadAsFile(content, fileName);
+  };
+
   return (
     <PageLayout className="py-6">
       <div className="mb-6">
@@ -121,7 +138,9 @@ const MeetingDetail = () => {
       </div>
 
       <div className="mt-6 flex justify-end gap-4">
-        <Button variant="outline">Download Transcript</Button>
+        <Button variant="outline" onClick={handleDownloadTranscript}>
+          <Download className="h-4 w-4 mr-2" /> Download Transcript
+        </Button>
         <Button>Share Notes</Button>
       </div>
     </PageLayout>
