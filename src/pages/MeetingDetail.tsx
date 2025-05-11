@@ -5,8 +5,10 @@ import { Button } from '@/components/ui/button';
 import PageLayout from '@/components/layout/PageLayout';
 import TranscriptPanel from '@/components/meeting/TranscriptPanel';
 import KeyPointsPanel from '@/components/meeting/KeyPointsPanel';
-import { toast } from 'sonner';
+import { toast } from '@/components/ui/sonner';
 import { supabase } from '@/integrations/supabase/client';
+import { Download, Share2 } from 'lucide-react';
+import { downloadAsFile, shareContent } from '@/utils/exportUtils';
 
 interface Meeting {
   id: string;
@@ -79,6 +81,43 @@ const MeetingDetail = () => {
     fetchMeeting();
   }, [id]);
 
+  const handleDownloadTranscript = () => {
+    if (!meeting) return;
+    
+    // Format transcript for download
+    const formattedTranscript = meeting.transcript.join('\n\n');
+    const filename = `${meeting.title.replace(/\s+/g, '_')}_transcript_${new Date().toISOString().split('T')[0]}.txt`;
+    
+    downloadAsFile(formattedTranscript, filename);
+  };
+
+  const handleShareNotes = async () => {
+    if (!meeting) return;
+    
+    // Format meeting notes for sharing
+    const meetingDate = new Date(meeting.date).toLocaleDateString();
+    const keyPointsList = meeting.key_points.map(point => `• ${point}`).join('\n');
+    const actionItemsList = meeting.action_items.map(item => `• ${item}`).join('\n');
+    
+    const sharableContent = `
+Meeting Notes: ${meeting.title}
+Date: ${meetingDate}
+${meeting.duration ? `Duration: ${meeting.duration}\n` : ''}
+
+Key Points:
+${keyPointsList || 'None'}
+
+Action Items:
+${actionItemsList || 'None'}
+`.trim();
+
+    await shareContent(
+      `Meeting Notes: ${meeting.title}`,
+      sharableContent,
+      window.location.href
+    );
+  };
+
   if (isLoading) {
     return (
       <PageLayout>
@@ -121,8 +160,18 @@ const MeetingDetail = () => {
       </div>
 
       <div className="mt-6 flex justify-end gap-4">
-        <Button variant="outline">Download Transcript</Button>
-        <Button>Share Notes</Button>
+        <Button 
+          variant="outline" 
+          onClick={handleDownloadTranscript}
+          disabled={!meeting.transcript || meeting.transcript.length === 0}
+        >
+          <Download className="mr-2 h-4 w-4" />
+          Download Transcript
+        </Button>
+        <Button onClick={handleShareNotes}>
+          <Share2 className="mr-2 h-4 w-4" />
+          Share Notes
+        </Button>
       </div>
     </PageLayout>
   );
