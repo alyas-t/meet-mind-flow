@@ -1,6 +1,7 @@
 
 
 **MeetingScribe**
+Developed By Alyas Thomas and Daanesh Bogale
 
 ## ✨ What It Does
 * **Capture** – Streams microphone audio from any lecture or meeting directly to AWS Transcribe for speech‑to‑text.
