@@ -1,4 +1,3 @@
-
 // src/pages/NewMeeting.tsx
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
@@ -13,7 +12,6 @@ import { useNavigate } from 'react-router-dom';
 import { getAwsConfig, isAwsConfigured } from '@/services/aws/config';
 import TranscriptionService from '@/services/aws/transcriptionService';
 import SummaryService from '@/services/aws/summaryService';
-import { Check } from 'lucide-react';
 
 // Use your actual Gemini API key
 const GEMINI_API_KEY = 'AIzaSyDzU4-SU9RyoXCg7jDfWa6GKAH-S8zU1hY';
@@ -121,63 +119,25 @@ const NewMeeting = () => {
   const handleStopRecording = () => {
     transcriptionService.stopRecording();
   };
-
-  const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setMeetingTitle(e.target.value);
-  };
   
   const handleSaveMeeting = async () => {
-    if (isRecording) {
-      // If recording is still active, stop it first
-      handleStopRecording();
-      // Wait a moment for the recording to finish processing
-      await new Promise(resolve => setTimeout(resolve, 500));
-    }
-    
     setIsSaving(true);
     
     try {
-      // Prepare meeting data
-      const meetingData = {
-        id: `meeting-${Date.now()}`,
-        title: meetingTitle,
-        date: new Date().toISOString(),
-        transcript: transcript,
-        keyPoints: keyPoints,
-        actionItems: actionItems,
-      };
-      
-      if (awsConfigured && s3Configured) {
-        // In a real implementation, this would save to S3/DynamoDB
-        // For now, we simulate a successful save
+      if (awsConfigured) {
+        // In a production app, this would save meeting data to DynamoDB
         await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        // Save to localStorage as a fallback/demonstration
-        const savedMeetings = JSON.parse(localStorage.getItem('savedMeetings') || '[]');
-        savedMeetings.push(meetingData);
-        localStorage.setItem('savedMeetings', JSON.stringify(savedMeetings));
-        
-        toast.success("Meeting saved successfully", {
-          description: "Meeting data has been saved to AWS"
-        });
+        toast.success("Meeting saved to AWS successfully");
       } else {
-        // Save to localStorage as a demonstration
-        const savedMeetings = JSON.parse(localStorage.getItem('savedMeetings') || '[]');
-        savedMeetings.push(meetingData);
-        localStorage.setItem('savedMeetings', JSON.stringify(savedMeetings));
-        
-        toast.success("Meeting saved successfully", {
-          description: "Meeting data has been saved locally"
-        });
+        // Mock saving
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        toast.success("Meeting saved successfully (mock)");
       }
       
-      // Navigate to dashboard after successful save
       navigate("/dashboard");
     } catch (error) {
       console.error("Error saving meeting:", error);
-      toast.error("Failed to save meeting", {
-        description: "Please try again later"
-      });
+      toast.error("Failed to save meeting. Please try again.");
     } finally {
       setIsSaving(false);
     }
@@ -185,28 +145,11 @@ const NewMeeting = () => {
   
   return (
     <PageLayout className="py-6" showAwsNotice={!awsConfigured || !s3Configured}>
-      <div className="mb-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div>
-          <Input
-            value={meetingTitle}
-            onChange={handleTitleChange}
-            className="text-xl font-bold bg-transparent border-0 border-b border-gray-200 rounded-none px-0 w-full max-w-md focus-visible:ring-0 focus-visible:border-app-blue"
-          />
-          <p className="text-gray-500">{new Date().toLocaleString()}</p>
+      <div className="mb-6">
+        <div className="text-app-blue text-2xl font-bold">
+          {meetingTitle}
         </div>
-        
-        <Button 
-          disabled={transcript.length === 0 || isSaving}
-          className="bg-app-blue hover:bg-app-blue/90 flex items-center gap-2"
-          onClick={handleSaveMeeting}
-        >
-          {isSaving ? "Saving..." : (
-            <>
-              <Check className="w-4 h-4" />
-              Save & Exit
-            </>
-          )}
-        </Button>
+        <p className="text-gray-500">{new Date().toLocaleString()}</p>
       </div>
       
       {!s3Configured && awsConfigured && (
@@ -224,6 +167,7 @@ const NewMeeting = () => {
               isRecording={isRecording}
               onStartRecording={handleStartRecording}
               onStopRecording={handleStopRecording}
+              onTranscriptUpdate={handleTranscriptUpdate}
             />
           </Card>
         </div>
@@ -242,6 +186,16 @@ const NewMeeting = () => {
             transcript={transcript} // For backward compatibility
           />
         </div>
+      </div>
+
+      <div className="mt-6 flex justify-end">
+        <Button 
+          disabled={transcript.length === 0 || isSaving}
+          className="bg-app-blue hover:bg-app-blue/90"
+          onClick={handleSaveMeeting}
+        >
+          {isSaving ? "Saving..." : "Save & Exit"}
+        </Button>
       </div>
     </PageLayout>
   );

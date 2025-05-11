@@ -1,4 +1,3 @@
-
 // src/components/AudioRecorder.tsx
 import React from 'react';
 import { Button } from "@/components/ui/button";
@@ -16,11 +15,11 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({
   onStopRecording 
 }) => {
   return (
-    <div className="audio-recorder flex flex-col items-center gap-4">
+    <div className="audio-recorder">
       {!isRecording ? (
         <Button 
           onClick={onStartRecording} 
-          className="record-button w-full"
+          className="record-button"
           size="lg"
           variant="default"
         >
@@ -30,7 +29,7 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({
       ) : (
         <Button 
           onClick={onStopRecording} 
-          className="stop-button w-full"
+          className="stop-button"
           size="lg"
           variant="destructive"
         >
@@ -38,17 +37,6 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({
           Stop Recording
         </Button>
       )}
-      
-      <div className="text-center text-sm text-muted-foreground mt-2">
-        {isRecording ? (
-          <div className="flex items-center justify-center gap-2">
-            <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse"></span>
-            <span>Recording in progress...</span>
-          </div>
-        ) : (
-          <p>Click to start recording your meeting</p>
-        )}
-      </div>
     </div>
   );
 };
