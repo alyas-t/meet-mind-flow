@@ -1,13 +1,13 @@
-
-import React from 'react';
-import { useParams } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card } from '@/components/ui/card';
 import PageLayout from '@/components/layout/PageLayout';
 import TranscriptPanel from '@/components/meeting/TranscriptPanel';
 import KeyPointsPanel from '@/components/meeting/KeyPointsPanel';
+import { toast } from 'sonner';
 
-// Mock data
+// Fallback mock data in case we can't find the meeting
 const mockMeetingsData = {
   '1': {
     id: '1',
@@ -65,9 +65,60 @@ const mockMeetingsData = {
   },
 };
 
+interface Meeting {
+  id: string;
+  title: string;
+  date: string;
+  duration?: string;
+  transcript: string[];
+  keyPoints: string[];
+  actionItems: string[];
+}
+
 const MeetingDetail = () => {
   const { id } = useParams<{ id: string }>();
-  const meeting = id ? mockMeetingsData[id as keyof typeof mockMeetingsData] : null;
+  const navigate = useNavigate();
+  const [meeting, setMeeting] = useState<Meeting | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    if (!id) return;
+
+    try {
+      // Try to fetch from localStorage first
+      const meetingsJSON = localStorage.getItem('meetings');
+      if (meetingsJSON) {
+        const meetings = JSON.parse(meetingsJSON);
+        const foundMeeting = meetings.find((m: Meeting) => m.id === id);
+        
+        if (foundMeeting) {
+          setMeeting(foundMeeting);
+          return;
+        }
+      }
+      
+      // Fallback to mock data if meeting not found in localStorage
+      const mockMeeting = mockMeetingsData[id as keyof typeof mockMeetingsData];
+      if (mockMeeting) {
+        setMeeting(mockMeeting as Meeting);
+      }
+    } catch (error) {
+      console.error('Error loading meeting:', error);
+      toast.error('Failed to load meeting details');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [id]);
+
+  if (isLoading) {
+    return (
+      <PageLayout>
+        <div className="text-center py-12">
+          <p>Loading meeting details...</p>
+        </div>
+      </PageLayout>
+    );
+  }
 
   if (!meeting) {
     return (
@@ -75,6 +126,9 @@ const MeetingDetail = () => {
         <div className="text-center py-12">
           <h2 className="text-2xl font-bold mb-2">Meeting not found</h2>
           <p className="text-gray-500">The meeting you're looking for doesn't exist or has been deleted.</p>
+          <Button onClick={() => navigate('/dashboard')} className="mt-4">
+            Back to Dashboard
+          </Button>
         </div>
       </PageLayout>
     );
@@ -84,7 +138,7 @@ const MeetingDetail = () => {
     <PageLayout className="py-6">
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-app-blue">{meeting.title}</h1>
-        <p className="text-gray-500">{new Date(meeting.date).toLocaleDateString()} • {meeting.duration}</p>
+        <p className="text-gray-500">{new Date(meeting.date).toLocaleDateString()} {meeting.duration && `• ${meeting.duration}`}</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 h-[calc(100vh-300px)]">

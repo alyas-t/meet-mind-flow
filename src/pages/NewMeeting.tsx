@@ -129,16 +129,18 @@ const NewMeeting = () => {
         handleStopRecording();
       }
       
-      // Create meeting data object
+      // Create meeting data object with all required fields
       const meetingData = {
         id: Date.now().toString(),
-        title: meetingTitle,
+        title: meetingTitle || 'Untitled Meeting',
         date: new Date().toISOString(),
         transcript: transcript,
         keyPoints: keyPoints,
         actionItems: actionItems,
         createdAt: new Date().toISOString()
       };
+      
+      console.log('Saving meeting data:', meetingData);
       
       // Get existing meetings or initialize empty array
       const existingMeetingsJSON = localStorage.getItem('meetings');
@@ -147,6 +149,8 @@ const NewMeeting = () => {
       // Add new meeting and save back to localStorage
       existingMeetings.push(meetingData);
       localStorage.setItem('meetings', JSON.stringify(existingMeetings));
+      
+      console.log('Updated meetings in localStorage:', existingMeetings);
       
       if (awsConfigured) {
         // In a production app, this would save meeting data to DynamoDB
@@ -158,6 +162,7 @@ const NewMeeting = () => {
         });
       }
       
+      // Navigate to dashboard after successful save
       navigate("/dashboard");
     } catch (error: any) {
       console.error("Error saving meeting:", error);
