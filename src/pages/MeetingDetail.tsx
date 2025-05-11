@@ -1,69 +1,12 @@
+
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import PageLayout from '@/components/layout/PageLayout';
 import TranscriptPanel from '@/components/meeting/TranscriptPanel';
 import KeyPointsPanel from '@/components/meeting/KeyPointsPanel';
 import { toast } from 'sonner';
-
-// Fallback mock data in case we can't find the meeting
-const mockMeetingsData = {
-  '1': {
-    id: '1',
-    title: 'Weekly Team Standup',
-    date: '2025-05-09',
-    duration: '45 min',
-    transcript: [
-      "Hello everyone, thank you for joining today's meeting.",
-      "Let's start by discussing the current project status.",
-      "We've made good progress on the first milestone.",
-      "I think we should prioritize the user interface improvements.",
-      "Does anyone have questions about the timeline?",
-      "We should allocate more resources to testing before the next release.",
-      "Let's make sure we address all the feedback from the last user testing session."
-    ],
-    keyPoints: [
-      "Made good progress on first milestone",
-      "Should prioritize UI improvements",
-      "Allocate more resources to testing",
-      "Address feedback from last user testing"
-    ],
-    actionItems: [
-      "Review UI improvement proposals",
-      "Schedule additional testing sessions",
-      "Compile user feedback report"
-    ],
-  },
-  '2': {
-    id: '2',
-    title: 'Project Planning Session',
-    date: '2025-05-07',
-    duration: '60 min',
-    transcript: [
-      "Welcome to our project planning session.",
-      "Today we need to finalize the roadmap for Q3.",
-      "Marketing wants to launch the new features by August.",
-      "Development team estimates they need 6 weeks for implementation.",
-      "We should start with user research as soon as possible.",
-      "Budget has been approved for additional resources.",
-    ],
-    keyPoints: [
-      "Finalize Q3 roadmap",
-      "Marketing launch target: August",
-      "Development needs 6 weeks for implementation",
-      "Start user research ASAP",
-      "Budget approved for additional resources"
-    ],
-    actionItems: [
-      "Create detailed Q3 roadmap document",
-      "Schedule user research sessions",
-      "Allocate approved resources to teams",
-      "Set up weekly progress tracking",
-      "Coordinate with marketing on launch timeline"
-    ],
-  },
-};
+import { supabase } from '@/integrations/supabase/client';
 
 interface Meeting {
   id: string;
@@ -71,8 +14,8 @@ interface Meeting {
   date: string;
   duration?: string;
   transcript: string[];
-  keyPoints: string[];
-  actionItems: string[];
+  key_points: string[];
+  action_items: string[];
 }
 
 const MeetingDetail = () => {
@@ -84,30 +27,56 @@ const MeetingDetail = () => {
   useEffect(() => {
     if (!id) return;
 
-    try {
-      // Try to fetch from localStorage first
-      const meetingsJSON = localStorage.getItem('meetings');
-      if (meetingsJSON) {
-        const meetings = JSON.parse(meetingsJSON);
-        const foundMeeting = meetings.find((m: Meeting) => m.id === id);
+    const fetchMeeting = async () => {
+      try {
+        setIsLoading(true);
         
-        if (foundMeeting) {
-          setMeeting(foundMeeting);
-          return;
+        // Try to fetch from Supabase first
+        const { data, error } = await supabase
+          .from('meetings')
+          .select('*')
+          .eq('id', id)
+          .single();
+        
+        if (error) {
+          console.log('Error fetching from Supabase, trying localStorage:', error);
+          
+          // Try to fetch from localStorage as fallback
+          const meetingsJSON = localStorage.getItem('meetings');
+          if (meetingsJSON) {
+            const meetings = JSON.parse(meetingsJSON);
+            const foundMeeting = meetings.find((m: any) => m.id === id);
+            
+            if (foundMeeting) {
+              setMeeting({
+                ...foundMeeting,
+                key_points: foundMeeting.keyPoints || foundMeeting.key_points || [],
+                action_items: foundMeeting.actionItems || foundMeeting.action_items || []
+              });
+              return;
+            }
+          }
+          
+          // If not found in localStorage or Supabase
+          toast.error('Meeting not found');
+        } else if (data) {
+          // Format data from Supabase
+          setMeeting({
+            ...data,
+            key_points: data.key_points as string[] || [],
+            action_items: data.action_items as string[] || [],
+            transcript: data.transcript as string[] || []
+          });
         }
+      } catch (error) {
+        console.error('Error loading meeting:', error);
+        toast.error('Failed to load meeting details');
+      } finally {
+        setIsLoading(false);
       }
-      
-      // Fallback to mock data if meeting not found in localStorage
-      const mockMeeting = mockMeetingsData[id as keyof typeof mockMeetingsData];
-      if (mockMeeting) {
-        setMeeting(mockMeeting as Meeting);
-      }
-    } catch (error) {
-      console.error('Error loading meeting:', error);
-      toast.error('Failed to load meeting details');
-    } finally {
-      setIsLoading(false);
-    }
+    };
+
+    fetchMeeting();
   }, [id]);
 
   if (isLoading) {
@@ -144,8 +113,8 @@ const MeetingDetail = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 h-[calc(100vh-300px)]">
         <TranscriptPanel transcript={meeting.transcript} autoScroll={false} />
         <KeyPointsPanel 
-          keyPoints={meeting.keyPoints} 
-          actionItems={meeting.actionItems} 
+          keyPoints={meeting.key_points} 
+          actionItems={meeting.action_items} 
           isLoading={false} 
           error="" 
         />

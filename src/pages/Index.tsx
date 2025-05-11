@@ -1,102 +1,88 @@
 
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import PageLayout from '@/components/layout/PageLayout';
-import { Mic, FileText, CheckCircle } from 'lucide-react';
+import { Mic, ArrowRight, CheckCircle } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
 
 const Index = () => {
+  const { user, isLoading } = useAuth();
+  
+  // If user is logged in, redirect to dashboard
+  if (!isLoading && user) {
+    return <Navigate to="/dashboard" />;
+  }
+
   return (
-    <PageLayout className="py-0">
-      {/* Hero section */}
-      <div className="flex flex-col md:flex-row items-center py-16 gap-8">
-        <div className="md:w-1/2 space-y-6">
-          <div className="inline-block bg-app-blue/10 text-app-blue font-medium px-4 py-2 rounded-full text-sm">
-            Effortless Meeting Notes
-          </div>
-          <h1 className="text-4xl md:text-5xl font-bold text-gray-900 leading-tight">
-            Never Miss a <span className="text-app-blue">Key Point</span> Again
-          </h1>
-          <p className="text-xl text-gray-600 leading-relaxed">
-            Intelligent Meeting Assistant automatically transcribes, summarizes, and extracts action items from your meetings in real-time.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-4 pt-2">
-            <Button size="lg" className="bg-app-blue hover:bg-app-dark-blue text-lg h-12">
-              <Link to="/new-meeting">Start Recording</Link>
-            </Button>
-            <Button variant="outline" size="lg" className="text-lg h-12">
-              <Link to="/dashboard">View Dashboard</Link>
-            </Button>
-          </div>
-        </div>
-        <div className="md:w-1/2 flex justify-center">
-          <div className="relative">
-            <div className="absolute -inset-1 bg-gradient-to-r from-app-blue to-blue-400 rounded-xl blur-xl opacity-30"></div>
-            <img 
-              src="/meeting.jpg" 
-              alt="Meeting Assistant Interface" 
-              className="relative rounded-xl shadow-lg border border-gray-200 bg-white"
-              width={600}
-              height={400}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Features section */}
-      <div className="py-24 bg-white -mx-8 px-8">
-        <div className="container">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl font-bold mb-4 text-gray-900">How It Works</h2>
-            <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-              Our intelligent assistant makes capturing meeting information effortless and accurate
+    <PageLayout fullWidth showAwsNotice={false}>
+      <div className="min-h-[calc(100vh-150px)] flex flex-col">
+        {/* Hero Section */}
+        <div className="bg-gradient-to-b from-slate-50 to-white py-20 md:py-32">
+          <div className="container mx-auto text-center flex flex-col items-center">
+            <div className="bg-app-blue p-4 rounded-full mb-6">
+              <Mic className="w-8 h-8 text-white" />
+            </div>
+            <h1 className="text-4xl md:text-6xl font-bold text-gray-900 mb-4">
+              MeetingScribe
+            </h1>
+            <p className="text-xl text-gray-600 max-w-2xl mb-8">
+              Your AI-powered meeting assistant that captures transcripts and generates smart summaries in real-time.
             </p>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
-            <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-all">
-              <div className="w-14 h-14 bg-app-blue rounded-xl flex items-center justify-center mb-6">
-                <Mic className="h-7 w-7 text-white" />
-              </div>
-              <h3 className="text-xl font-bold mb-3 text-gray-900">Record</h3>
-              <p className="text-gray-600">
-                Use your microphone to capture meeting audio, with real-time transcription that follows your conversation.
-              </p>
-            </div>
-            
-            <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-all">
-              <div className="w-14 h-14 bg-app-blue rounded-xl flex items-center justify-center mb-6">
-                <FileText className="h-7 w-7 text-white" />
-              </div>
-              <h3 className="text-xl font-bold mb-3 text-gray-900">Transcribe</h3>
-              <p className="text-gray-600">
-                AI-powered speech-to-text conversion with high accuracy, proper punctuation, and speaker attribution.
-              </p>
-            </div>
-            
-            <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-all">
-              <div className="w-14 h-14 bg-app-blue rounded-xl flex items-center justify-center mb-6">
-                <CheckCircle className="h-7 w-7 text-white" />
-              </div>
-              <h3 className="text-xl font-bold mb-3 text-gray-900">Summarize</h3>
-              <p className="text-gray-600">
-                Automatically extract key points and action items in real-time, so you can focus on the conversation.
-              </p>
+            <div className="flex flex-wrap gap-4 justify-center">
+              <Button size="lg" className="text-lg bg-app-blue hover:bg-app-dark-blue" asChild>
+                <Link to="/auth">Get Started <ArrowRight className="ml-2 h-5 w-5" /></Link>
+              </Button>
             </div>
           </div>
         </div>
-      </div>
 
-      {/* CTA section */}
-      <div className="py-24 text-center bg-gradient-to-br from-app-blue/5 to-app-blue/10 rounded-3xl my-12">
-        <div className="container max-w-4xl">
-          <h2 className="text-3xl font-bold mb-4 text-gray-900">Ready to Get Started?</h2>
-          <p className="text-xl mb-8 text-gray-600">
-            Join thousands of professionals who use Intelligent Meeting Assistant to save time and capture every important detail.
-          </p>
-          <Button size="lg" className="bg-app-blue hover:bg-app-dark-blue text-lg h-12">
-            <Link to="/new-meeting">Start Your First Meeting</Link>
-          </Button>
+        {/* Features Section */}
+        <div className="py-20 bg-gray-50">
+          <div className="container mx-auto">
+            <h2 className="text-3xl font-bold text-center mb-12">Key Features</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              <div className="bg-white p-6 rounded-lg shadow-sm">
+                <div className="bg-blue-50 p-3 rounded-full w-fit mb-4">
+                  <Mic className="w-6 h-6 text-app-blue" />
+                </div>
+                <h3 className="text-xl font-semibold mb-2">Live Transcription</h3>
+                <p className="text-gray-600">
+                  Automatically capture your meetings with advanced speech recognition technology.
+                </p>
+              </div>
+              
+              <div className="bg-white p-6 rounded-lg shadow-sm">
+                <div className="bg-blue-50 p-3 rounded-full w-fit mb-4">
+                  <CheckCircle className="w-6 h-6 text-app-blue" />
+                </div>
+                <h3 className="text-xl font-semibold mb-2">AI Summaries</h3>
+                <p className="text-gray-600">
+                  Get instant key points and action items extracted from your meeting content.
+                </p>
+              </div>
+              
+              <div className="bg-white p-6 rounded-lg shadow-sm">
+                <div className="bg-blue-50 p-3 rounded-full w-fit mb-4">
+                  <ArrowRight className="w-6 h-6 text-app-blue" />
+                </div>
+                <h3 className="text-xl font-semibold mb-2">Easy Sharing</h3>
+                <p className="text-gray-600">
+                  Save and share meeting notes with your team for better collaboration.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* CTA Section */}
+        <div className="py-16 bg-white">
+          <div className="container mx-auto text-center">
+            <h2 className="text-3xl font-bold mb-6">Ready to transform your meetings?</h2>
+            <Button size="lg" className="bg-app-blue hover:bg-app-dark-blue" asChild>
+              <Link to="/auth">Sign Up Now</Link>
+            </Button>
+          </div>
         </div>
       </div>
     </PageLayout>

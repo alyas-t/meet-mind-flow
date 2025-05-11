@@ -1,3 +1,4 @@
+
 // src/pages/NewMeeting.tsx
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
@@ -12,6 +13,8 @@ import { useNavigate } from 'react-router-dom';
 import { getAwsConfig, isAwsConfigured } from '@/services/aws/config';
 import TranscriptionService from '@/services/aws/transcriptionService';
 import SummaryService from '@/services/aws/summaryService';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 
 // Use your actual Gemini API key
 const GEMINI_API_KEY = 'AIzaSyDzU4-SU9RyoXCg7jDfWa6GKAH-S8zU1hY';
@@ -28,6 +31,7 @@ const NewMeeting = () => {
   const [awsConfigured, setAwsConfigured] = useState<boolean>(false);
   const [s3Configured, setS3Configured] = useState<boolean>(false);
   const navigate = useNavigate();
+  const { user } = useAuth();
   
   const transcriptionService = React.useMemo(() => new TranscriptionService(), []);
   const summaryService = React.useMemo(() => new SummaryService(GEMINI_API_KEY), []);
@@ -129,38 +133,54 @@ const NewMeeting = () => {
         handleStopRecording();
       }
       
-      // Create meeting data object with all required fields
-      const meetingData = {
-        id: Date.now().toString(),
-        title: meetingTitle || 'Untitled Meeting',
-        date: new Date().toISOString(),
-        transcript: transcript,
-        keyPoints: keyPoints,
-        actionItems: actionItems,
-        createdAt: new Date().toISOString()
-      };
-      
-      console.log('Saving meeting data:', meetingData);
-      
-      // Get existing meetings or initialize empty array
-      const existingMeetingsJSON = localStorage.getItem('meetings');
-      const existingMeetings = existingMeetingsJSON ? JSON.parse(existingMeetingsJSON) : [];
-      
-      // Add new meeting and save back to localStorage
-      existingMeetings.push(meetingData);
-      localStorage.setItem('meetings', JSON.stringify(existingMeetings));
-      
-      console.log('Updated meetings in localStorage:', existingMeetings);
-      
-      if (awsConfigured) {
-        // In a production app, this would save meeting data to DynamoDB
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        toast.success("Meeting saved to AWS successfully");
-      } else {
-        toast.success("Meeting saved successfully", {
-          description: "Meeting data saved to local storage"
-        });
+      if (!user) {
+        throw new Error("You must be logged in to save a meeting");
       }
+      
+      // Save to Supabase
+      const { data, error } = await supabase
+        .from('meetings')
+        .insert({
+          title: meetingTitle || 'Untitled Meeting',
+          user_id: user.id,
+          date: new Date().toISOString(),
+          transcript: transcript,
+          key_points: keyPoints,
+          action_items: actionItems,
+          duration: transcript.length > 0 ? `${Math.round(transcript.length / 8)} min` : null
+        })
+        .select()
+        .single();
+      
+      if (error) throw error;
+      
+      console.log('Meeting saved to Supabase:', data);
+      
+      // For backward compatibility, also save to localStorage
+      try {
+        // Create meeting data object with all required fields
+        const meetingData = {
+          id: data.id,
+          title: meetingTitle || 'Untitled Meeting',
+          date: new Date().toISOString(),
+          transcript: transcript,
+          key_points: keyPoints,
+          action_items: actionItems,
+          created_at: new Date().toISOString()
+        };
+        
+        // Get existing meetings or initialize empty array
+        const existingMeetingsJSON = localStorage.getItem('meetings');
+        const existingMeetings = existingMeetingsJSON ? JSON.parse(existingMeetingsJSON) : [];
+        
+        // Add new meeting and save back to localStorage
+        existingMeetings.push(meetingData);
+        localStorage.setItem('meetings', JSON.stringify(existingMeetings));
+      } catch (localError) {
+        console.warn("Failed to save to localStorage, but Supabase save succeeded:", localError);
+      }
+      
+      toast.success("Meeting saved successfully");
       
       // Navigate to dashboard after successful save
       navigate("/dashboard");
